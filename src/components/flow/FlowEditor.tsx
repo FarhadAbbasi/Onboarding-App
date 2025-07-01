@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, Smartphone, Monitor, Wand2, Save, Code, Palette } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Smartphone, Monitor, Wand2, Save, Code, Palette, Edit3 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { generatePageContent } from '../../lib/openai'
 import { extractColorsFromWebsite, type ColorScheme } from '../../lib/colorExtractor'
 import { LoadingSpinner } from '../ui/LoadingSpinner'
 import type { FlowPlan, Page } from '../../lib/schemas'
 // import { NewFlowEditor } from './editor/NewFlowEditor'
-import { parseAIHtmlToBlocksAndTheme } from './editor/AIHtmlParser'
+import { parseAIHtmlToBlocksAndTheme, type ParsedBlock, type ParsedTheme } from './editor/AIHtmlParser'
 import { supabase } from '../../lib/supabase'
-import type { ParsedBlock, ParsedTheme } from './editor/AIHtmlParser'
 // import { FlowBlockEditor } from './editor/FlowBlockEditor'
 import { EditorLayout } from './editor/EditorLayout'
 
@@ -39,13 +38,13 @@ export function FlowEditor({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [colorScheme, setColorScheme] = useState<ColorScheme | null>(null)
   const [isExtractingColors, setIsExtractingColors] = useState(false)
-  const [blockEditorMode, setBlockEditorMode] = useState(false)
+  const [blockEditorMode, setBlockEditorMode] = useState(true) // Enable block editor by default
 
   const currentPage = pages[currentPageIndex]
   
 
-  // Generate HTML content for a page if it doesn't have any
-  const generateContentForPage = async (pageIndex: number) => {
+  // Generate structured component content for a page if it doesn't have any
+  const generateContent = async (pageIndex: number) => {
     const page = pages[pageIndex]
     if (page.html_content) return // Already has content
 
@@ -62,22 +61,33 @@ export function FlowEditor({
         colorScheme || undefined
       )
 
-      // Parse HTML to blocks/theme
-      const { blocks, theme } = parseAIHtmlToBlocksAndTheme(response.html_content)
+      // Handle structured response with blocks and theme
+      if (response.blocks && response.blocks.length > 0) {
+        // Handle structured component response (new format)
+        const blocks: ParsedBlock[] = response.blocks?.map((block: any, index: number) => ({
+          id: `block-${Date.now()}-${index}`,
+          type: block.type,
+          content: typeof block.content === 'object' ? JSON.stringify(block.content) : block.content,
+          styles: {},
+          order_index: index
+        })) || [];
+        
+        const theme = {
+          html: JSON.stringify(response.theme || {
+            backgroundClass: 'bg-gradient-to-br from-blue-50 to-indigo-50', 
+            textClass: 'text-gray-900',
+            accentColor: 'indigo'
+          })
+        };
 
-      // If blocks found, save to Supabase and enable block editor mode
-      if (blocks.length > 0) {
-        if (projectId) {
-
+        if (blocks.length > 0 && projectId) {
           try {
             // Delete old blocks for this page
-            const deleteRes = await supabase.from('content_blocks').delete().eq('project_id', projectId).eq('page_id', page.id)
-            if (deleteRes.error) {
-              console.error('[FlowEditor] Error deleting old blocks:', deleteRes.error)
-            }
-            // Insert new blocks for this page
+            await supabase.from('content_blocks').delete().eq('project_id', projectId).eq('page_id', page.id);
+            
+            // Insert new blocks
             for (let i = 0; i < blocks.length; i++) {
-              const b = blocks[i]
+              const b = blocks[i];
               const insertRes = await supabase.from('content_blocks').insert({
                 project_id: projectId,
                 page_id: page.id,
@@ -86,49 +96,81 @@ export function FlowEditor({
                 content: typeof b.content === 'string' ? b.content : JSON.stringify(b.content),
                 order_index: i,
                 styles: b.styles || null,
-              })
+              });
               if (insertRes.error) {
-                console.error('[FlowEditor] Error inserting block:', b, insertRes.error)
-              } else {
-                console.log('[FlowEditor] Inserted block:', b, insertRes)
+                console.error('[FlowEditor] Error inserting block:', b, insertRes.error);
               }
             }
+            
             // Save theme and html_content for this page
-            const updateRes = await supabase.from('onboarding_pages').update({ html_content: response.html_content, theme: theme.html }).eq('project_id', projectId).eq('page_id', page.id)
+            const updateRes = await supabase.from('onboarding_pages').update({ 
+              html_content: response.html_content, 
+              theme: JSON.stringify(theme)
+            }).eq('project_id', projectId).eq('page_id', page.id);
+            
             if (updateRes.error) {
-              console.error('[FlowEditor] Error updating onboarding_pages:', updateRes.error)
-            } else {
-              console.log('[FlowEditor] Updated onboarding_pages:', updateRes)
+              console.error('[FlowEditor] Error updating page:', updateRes.error);
             }
-            // Update local pages state with theme and full blocks
-            setPages(prev => prev.map((p, i) =>
-              i === pageIndex
-                ? { ...p, html_content: response.html_content, theme: theme.html }
-                : p
-            ))
-            console.log('[FlowEditor] Updated local page with theme and blocks:', {
-              ...pages[pageIndex],
-              html_content: response.html_content,
-              theme: theme.html,
-            });
-          } catch (supabaseError) {
-            console.error('[FlowEditor] Unexpected error during Supabase save:', supabaseError, 'projectId:', projectId, 'pageId:', page.id)
+          } catch (error) {
+            console.error('[FlowEditor] Error saving parsed data:', error);
           }
-        } else {
-          console.error('[FlowEditor] No projectId provided! Cannot save to Supabase. projectId:', projectId)
         }
-        setBlockEditorMode(true)
-        console.log('[FlowEditor] Switched to block editor mode.')
       } else {
-        console.warn('[FlowEditor] No blocks found after parsing. Falling back to HTML preview.')
+        // Handle any remaining HTML format
+        try {
+          const { blocks, theme } = parseAIHtmlToBlocksAndTheme(response.html_content);
+          
+          if (blocks.length > 0 && projectId) {
+            // Delete old blocks for this page
+            await supabase.from('content_blocks').delete().eq('project_id', projectId).eq('page_id', page.id);
+            
+            // Insert new blocks
+            for (let i = 0; i < blocks.length; i++) {
+              const b = blocks[i];
+              const insertRes = await supabase.from('content_blocks').insert({
+                project_id: projectId,
+                page_id: page.id,
+                block_id: b.id,
+                type: b.type,
+                content: typeof b.content === 'string' ? b.content : JSON.stringify(b.content),
+                order_index: i,
+                styles: b.styles || null,
+              });
+              if (insertRes.error) {
+                console.error('[FlowEditor] Error inserting block:', b, insertRes.error);
+              }
+            }
+            
+            // Save theme and html_content for this page
+            const updateRes = await supabase.from('onboarding_pages').update({ 
+              html_content: response.html_content, 
+              theme: JSON.stringify(theme)
+            }).eq('project_id', projectId).eq('page_id', page.id);
+            
+            if (updateRes.error) {
+              console.error('[FlowEditor] Error updating page:', updateRes.error);
+            }
+          }
+        } catch (error) {
+          console.error('[FlowEditor] Error saving parsed data:', error);
+        }
       }
-      setHasUnsavedChanges(true)
-      toast.success(`Page generated: ${page.title}`)
+
+      // Update the page state
+      const updatedPages = [...pages];
+      updatedPages[pageIndex] = {
+        ...page,
+        html_content: response.html_content
+      };
+      setPages(updatedPages);
+      setHasUnsavedChanges(true);
+      
+      toast.success(`Generated content for ${page.title}!`);
     } catch (error) {
-      console.error('Content generation error:', error)
-      toast.error('Failed to generate page content. Please try again.')
+      console.error('[FlowEditor] Content generation error:', error);
+      toast.error('Failed to generate content. Please try again.');
     } finally {
-      setGeneratingContent(null)
+      setGeneratingContent(null);
     }
   }
 
@@ -151,13 +193,36 @@ export function FlowEditor({
     extractColors()
   }, [projectUrl, colorScheme])
 
-  // Auto-generate content for the first page
+  // Auto-generate content for pages without content
   useEffect(() => {
-    if (currentPage && !currentPage.html_content) {
-      console.log('[FlowEditor] Auto-generating content for page index:', currentPageIndex)
-      generateContentForPage(currentPageIndex)
+    if (currentPage && !currentPage.html_content && !generatingContent && blockEditorMode) {
+      // Check if there are any blocks in the database for this page first
+      const checkExistingContent = async () => {
+        try {
+          const { data: existingBlocks } = await supabase
+            .from('content_blocks')
+            .select('id')
+            .eq('project_id', projectId)
+            .eq('page_id', currentPage.id)
+            .limit(1);
+          
+          // Only generate if no blocks exist in database
+          if (!existingBlocks || existingBlocks.length === 0) {
+            console.log('[FlowEditor] No existing content found for page:', currentPage.id, '- triggering auto-generation');
+            generateContent(currentPageIndex);
+          } else {
+            console.log('[FlowEditor] Existing content found for page:', currentPage.id, '- skipping auto-generation');
+          }
+        } catch (error) {
+          console.error('[FlowEditor] Error checking existing content:', error);
+          // If error checking, proceed with generation as fallback
+          generateContent(currentPageIndex);
+        }
+      };
+      
+      checkExistingContent();
     }
-  }, [currentPageIndex])
+  }, [currentPageIndex, blockEditorMode, projectId])
 
   const navigateToPage = (index: number) => {
     if (index >= 0 && index < pages.length) {
@@ -210,18 +275,20 @@ export function FlowEditor({
       return;
     }
     try {
-      // Delete old blocks
-      const deleteRes = await supabase.from('content_blocks').delete().eq('project_id', projectId)
+      // Delete old blocks for this specific page
+      const deleteRes = await supabase.from('content_blocks').delete()
+        .eq('project_id', projectId)
+        .eq('page_id', currentPage.id)
       if (deleteRes.error) {
         console.error('[FlowEditor] Error deleting old blocks:', deleteRes.error)
-      } else {
-        console.log('[FlowEditor] Deleted old blocks:', deleteRes)
       }
-      // Insert new blocks
+      // Insert new blocks with proper page_id
       for (let i = 0; i < blocks.length; i++) {
         const b = blocks[i]
         const insertRes = await supabase.from('content_blocks').insert({
           project_id: projectId,
+          page_id: currentPage.id,  // CRITICAL: Include page_id
+          block_id: b.id,
           type: b.type,
           content: typeof b.content === 'string' ? b.content : JSON.stringify(b.content),
           order_index: i,
@@ -229,16 +296,15 @@ export function FlowEditor({
         })
         if (insertRes.error) {
           console.error('[FlowEditor] Error inserting block:', b, insertRes.error)
-        } else {
-          console.log('[FlowEditor] Inserted block:', b.id, insertRes)
         }
       }
       // Save theme and html_content
-      const updateRes = await supabase.from('onboarding_pages').update({ html_content, theme: theme.html }).eq('project_id', projectId)
+      const updateRes = await supabase.from('onboarding_pages').update({ 
+        html_content, 
+        theme: theme.html
+      }).eq('project_id', projectId).eq('page_id', currentPage.id)
       if (updateRes.error) {
         console.error('[FlowEditor] Error updating onboarding_pages:', updateRes.error)
-      } else {
-        console.log('[FlowEditor] Updated onboarding_pages:', updateRes)
       }
     } catch (supabaseError) {
       console.error('[FlowEditor] Unexpected error during Supabase save:', supabaseError, 'projectId:', projectId)
@@ -341,6 +407,15 @@ export function FlowEditor({
                   <span className="text-sm">Extracting colors...</span>
                 </div>
               )}
+
+              {/* Editor Mode Toggle */}
+              <button
+                onClick={() => setBlockEditorMode(!blockEditorMode)}
+                className={`btn-secondary flex items-center gap-2 ${blockEditorMode ? 'bg-blue-50 border-blue-200' : ''}`}
+              >
+                <Edit3 size={16} />
+                <span>{blockEditorMode ? 'Visual Editor' : 'Switch to Editor'}</span>
+              </button>
 
               {/* Show Code Toggle */}
               <button
@@ -462,7 +537,25 @@ export function FlowEditor({
 
                   {/* Editor Layout - ComponentLibrary outside, Device frames inside */}
                   <div className="h-[800px]">
-                    {blockEditorMode && projectId && currentPage.html_content ? (
+                    {isGenerating ? (
+                      <div className="flex flex-col items-center justify-center h-full bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+                        <div className="text-center space-y-4">
+                          <LoadingSpinner size="lg" />
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-900 mb-2">AI is Creating Your Page</h3>
+                            <p className="text-gray-600">
+                              Generating beautiful, styled components for "{currentPage.title}"...
+                            </p>
+                          </div>
+                          <div className="bg-white/80 backdrop-blur-sm rounded-lg px-4 py-3 border border-blue-100">
+                            <div className="flex items-center gap-2 text-sm text-blue-600">
+                              <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                              <span>Using your component library for consistent styling</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : blockEditorMode && projectId ? (
                       <EditorLayout
                         projectId={projectId}
                         pageId={currentPage.id}
@@ -470,12 +563,51 @@ export function FlowEditor({
                         pageTitle={currentPage.title}
                         previewMode={previewMode}
                         onSave={(blocks: ParsedBlock[], theme: ParsedTheme) => {
-  
                           saveBlocksAndThemeToSupabase(blocks, theme, currentPage.html_content || '');
                           setHasUnsavedChanges(true);
-                          toast.success('Page updated successfully!');
                         }}
                       />
+                    ) : (!blockEditorMode && !currentPage.html_content && !isGenerating) ? (
+                      <div className="flex flex-col items-center justify-center h-full bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border-2 border-dashed border-blue-200">
+                        <div className="text-center space-y-6 max-w-md">
+                          <div className="text-blue-400">
+                            <Wand2 size={56} className="mx-auto mb-4" />
+                          </div>
+                          <div>
+                            <h3 className="text-xl font-semibold text-gray-900 mb-2">AI-Powered Page Builder</h3>
+                            <p className="text-gray-600 leading-relaxed">
+                              Generate beautiful, styled content for "<strong>{currentPage.title}</strong>" using our component library.
+                            </p>
+                          </div>
+                          <div className="bg-white/80 backdrop-blur-sm rounded-lg p-4 border border-blue-100">
+                            <div className="flex items-center gap-3 text-sm text-gray-700">
+                              <div className="flex-shrink-0 w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
+                                <span className="text-blue-600 font-medium text-xs">1</span>
+                              </div>
+                              <span>AI generates styled components</span>
+                            </div>
+                            <div className="flex items-center gap-3 text-sm text-gray-700 mt-2">
+                              <div className="flex-shrink-0 w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
+                                <span className="text-blue-600 font-medium text-xs">2</span>
+                              </div>
+                              <span>Drag & drop to customize</span>
+                            </div>
+                            <div className="flex items-center gap-3 text-sm text-gray-700 mt-2">
+                              <div className="flex-shrink-0 w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
+                                <span className="text-blue-600 font-medium text-xs">3</span>
+                              </div>
+                              <span>Edit properties in real-time</span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => generateContent(currentPageIndex)}
+                            className="btn-primary flex items-center gap-2 px-6 py-3"
+                          >
+                            <Wand2 size={18} />
+                            Generate with AI
+                          </button>
+                        </div>
+                      </div>
                     ) : currentPage.html_content ? (
                       <div className="flex justify-center items-center h-full">
                         {previewMode === 'mobile' ? (
@@ -499,27 +631,27 @@ export function FlowEditor({
                             </div>
                           </div>
                         ) : (
-                          // MacBook Frame
+                          // MacBook Frame - Compact size
                           <div className="relative">
-                            <div className="w-[900px] h-[600px] bg-gray-200 rounded-[8px] p-[20px] shadow-2xl">
-                              <div className="w-full h-full bg-black rounded-[4px] p-[3px]">
-                                <div className="w-full h-full bg-gray-900 rounded-[2px] p-[20px]">
-                                  <div className="w-full h-full bg-white rounded-[4px] overflow-hidden">
+                            <div className="w-[600px] h-[400px] bg-gray-200 rounded-[6px] p-[12px] shadow-2xl">
+                              <div className="w-full h-full bg-black rounded-[3px] p-[2px]">
+                                <div className="w-full h-full bg-gray-900 rounded-[1px] p-[8px]">
+                                  <div className="w-full h-full bg-white rounded-[2px] overflow-hidden">
                                     {/* MacBook Menu Bar */}
-                                    <div className="h-[28px] bg-gray-100 border-b flex items-center px-4">
-                                      <div className="flex gap-2">
-                                        <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                                        <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                                        <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                                    <div className="h-[20px] bg-gray-100 border-b flex items-center px-2 flex-shrink-0">
+                                      <div className="flex gap-1">
+                                        <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                                        <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                                       </div>
                                       <div className="flex-1 text-center text-xs text-gray-600">
-                                        {currentPage.title} - {projectName}
+                                        {currentPage.title}
                                       </div>
                                     </div>
                                     
                                     <iframe
                                       srcDoc={currentPage.html_content}
-                                      className="w-full h-[calc(100%-28px)] border-0"
+                                      className="w-full h-[calc(100%-20px)] border-0"
                                       title={`Preview of ${currentPage.title}`}
                                     />
                                   </div>

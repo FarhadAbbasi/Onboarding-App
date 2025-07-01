@@ -32,7 +32,7 @@ export function EditorLayout({
   projectName, 
   pageTitle, 
   previewMode,
-  onSave 
+  onSave
 }: EditorLayoutProps) {
   const [blocks, setBlocks] = useState<ParsedBlock[]>([]);
   const [theme, setTheme] = useState<ParsedTheme>({ html: '' });
@@ -62,7 +62,7 @@ export function EditorLayout({
           .order('order_index', { ascending: true });
 
         if (blockError) {
-          console.error('Error fetching blocks:', blockError);
+          console.error('[EditorLayout] Error fetching blocks:', blockError);
         }
 
         // Fetch theme
@@ -74,30 +74,33 @@ export function EditorLayout({
           .single();
 
         if (pageError && !pageError.message.includes('no rows')) {
-          console.error('Error fetching theme:', pageError);
+          console.error('[EditorLayout] Error fetching theme:', pageError);
         }
 
-        setBlocks(
-          blockRows?.map((b: any) => ({
-            id: b.block_id,
-            type: b.type,
-            content: typeof b.content === 'string' && b.content.trim().startsWith('{') 
-              ? JSON.parse(b.content) 
-              : b.content,
-            styles: b.styles || undefined,
-          })) || []
-        );
+        const loadedBlocks = blockRows?.map((b: any) => ({
+          id: b.block_id,
+          type: b.type,
+          content: typeof b.content === 'string' && b.content.trim().startsWith('{') 
+            ? JSON.parse(b.content) 
+            : b.content,
+          styles: b.styles || undefined,
+        })) || [];
 
+        console.log('[EditorLayout] Loaded blocks from database:', loadedBlocks.length, 'blocks for page:', pageId);
+        
+        setBlocks(loadedBlocks);
         setTheme(pageRow?.theme ? { html: pageRow.theme } : { html: '' });
       } catch (error) {
-        console.error('Error loading data:', error);
+        console.error('[EditorLayout] Error loading data:', error);
         toast.error('Failed to load page data');
       } finally {
         setLoading(false);
       }
     };
 
-    loadData();
+    if (projectId && pageId) {
+      loadData();
+    }
   }, [projectId, pageId]);
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -213,7 +216,7 @@ export function EditorLayout({
       onSave?.(blocksToSave, themeToSave);
       
     } catch (error) {
-      console.error('Save error:', error);
+      console.error('[EditorLayout] Save error:', error);
       toast.error('Failed to save changes');
     }
   };
@@ -236,25 +239,27 @@ export function EditorLayout({
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="h-full flex">
+      <div className="h-full flex relative">
         {/* Component Library - Fixed Left Sidebar */}
-        <ComponentLibrary className="w-80 flex-shrink-0" />
+        <div className="w-80 flex-shrink-0 bg-white border-r border-gray-200">
+          <ComponentLibrary className="h-full" />
+        </div>
         
         {/* Device Preview - Center */}
-        <div className="flex-1 flex justify-center items-center p-4 bg-gray-100 min-w-0">
+        <div className="flex-1 flex justify-center items-center p-4 bg-gray-100 min-w-0 relative max-w-[calc(100vw-640px)]">
           {previewMode === 'mobile' ? (
             // iPhone Frame
-            <div className="relative">
+            <div className="relative z-10">
               <div className="w-[300px] h-[600px] bg-black rounded-[50px] p-[6px] shadow-2xl">
                 <div className="w-full h-full bg-gray-900 rounded-[44px] p-[3px]">
                   <div className="w-full h-full bg-white rounded-[41px] overflow-hidden relative">
                     {/* iPhone Notch */}
-                    <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-[120px] h-[25px] bg-black rounded-b-[12px] z-10"></div>
+                    <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-[120px] h-[25px] bg-black rounded-b-[12px] z-20"></div>
                     {/* iPhone Home Indicator */}
-                    <div className="absolute bottom-[6px] left-1/2 transform -translate-x-1/2 w-[100px] h-[4px] bg-black rounded-[2px] opacity-60"></div>
+                    <div className="absolute bottom-[6px] left-1/2 transform -translate-x-1/2 w-[100px] h-[4px] bg-black rounded-[2px] opacity-60 z-20"></div>
                     
-                    {/* Canvas Content - Hide scrollbar */}
-                    <div className="w-full h-full overflow-y-auto scrollbar-hide">
+                    {/* Canvas Content Container - Isolated theme scope */}
+                    <div className="w-full h-full overflow-y-auto scrollbar-hide relative">
                       <CanvasDropZone
                         blocks={blocks}
                         theme={theme}
@@ -271,14 +276,14 @@ export function EditorLayout({
               </div>
             </div>
           ) : (
-            // MacBook Frame - Smaller size
-            <div className="relative">
-              <div className="w-[700px] h-[450px] bg-gray-200 rounded-[6px] p-[15px] shadow-2xl">
+            // MacBook Frame - Responsive positioning and z-index
+            <div className="relative z-10">
+              <div className="w-[500px] h-[350px] bg-gray-200 rounded-[6px] p-[12px] shadow-2xl">
                 <div className="w-full h-full bg-black rounded-[3px] p-[2px]">
                   <div className="w-full h-full bg-gray-900 rounded-[1px] p-[15px]">
                     <div className="w-full h-full bg-white rounded-[3px] overflow-hidden">
                       {/* MacBook Menu Bar */}
-                      <div className="h-[24px] bg-gray-100 border-b flex items-center px-3">
+                      <div className="h-[24px] bg-gray-100 border-b flex items-center px-3 flex-shrink-0">
                         <div className="flex gap-1.5">
                           <div className="w-2.5 h-2.5 bg-red-500 rounded-full"></div>
                           <div className="w-2.5 h-2.5 bg-yellow-500 rounded-full"></div>
@@ -289,8 +294,8 @@ export function EditorLayout({
                         </div>
                       </div>
                       
-                      {/* Canvas Content */}
-                      <div className="w-full h-[calc(100%-24px)] overflow-y-auto">
+                      {/* Canvas Content Container - Isolated theme scope */}
+                      <div className="w-full h-[calc(100%-24px)] overflow-y-auto relative">
                         <CanvasDropZone
                           blocks={blocks}
                           theme={theme}
@@ -311,17 +316,19 @@ export function EditorLayout({
         </div>
         
         {/* Component Properties - Fixed Right Sidebar */}
-        <ComponentProperties
-          selectedBlock={selectedBlock}
-          onBlockUpdate={handleBlockUpdate}
-          onClose={() => setSelectedBlock(null)}
-        />
+        <div className="w-80 flex-shrink-0 bg-white border-l border-gray-200">
+          <ComponentProperties
+            selectedBlock={selectedBlock}
+            onBlockUpdate={handleBlockUpdate}
+            onClose={() => setSelectedBlock(null)}
+          />
+        </div>
       </div>
 
-      {/* Drag Overlay */}
-      <DragOverlay>
+      {/* Drag Overlay - Proper z-index management */}
+      <DragOverlay dropAnimation={null}>
         {activeId ? (
-          <div className="bg-white border-2 border-blue-400 rounded-lg p-3 shadow-xl opacity-90 transform rotate-2">
+          <div className="bg-white border-2 border-blue-400 rounded-lg p-3 shadow-xl opacity-90 transform rotate-2 z-50">
             <div className="text-sm font-medium text-blue-600">
               Drop into canvas
             </div>

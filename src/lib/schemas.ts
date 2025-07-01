@@ -1,5 +1,35 @@
 import { z } from 'zod'
 
+// Block content schema for structured responses
+export const BlockContentSchema = z.object({
+  text: z.string().optional(),
+  headline: z.string().optional(),
+  subheadline: z.string().optional(),
+  button_text: z.string().optional(),
+  features: z.array(z.string()).optional(),
+  quote: z.string().optional(),
+  author: z.string().optional(),
+  role: z.string().optional(),
+  company: z.string().optional(),
+  colorScheme: z.enum(['indigo', 'blue', 'green', 'red', 'yellow', 'purple', 'pink', 'gray', 'emerald', 'cyan', 'orange', 'slate']).optional(),
+  size: z.enum(['xs', 'sm', 'md', 'lg', 'xl', '2xl']).optional(),
+  variant: z.string().optional()
+})
+
+// Structured block schema
+export const StructuredBlockSchema = z.object({
+  type: z.string(),
+  content: BlockContentSchema
+})
+
+// Theme schema for structured responses
+export const ThemeSchema = z.object({
+  background: z.string().optional(),
+  text_color: z.string().optional(),
+  accent_color: z.string().optional(),
+  custom_css: z.string().optional()
+})
+
 // Block types for individual content pieces
 export const BlockSchema = z.object({
   id: z.string(),
@@ -35,15 +65,19 @@ export const AIFlowPlanResponseSchema = z.object({
   reasoning: z.string().optional() // Why this flow structure was chosen
 })
 
-// AI response for individual page content
+// AI response for individual page content (updated for structured format)
 export const AIPageContentResponseSchema = z.object({
   page_id: z.string(),
   html_content: z.string(), // Complete HTML for the page
-  blocks: z.array(BlockSchema).optional(), // Optional for backward compatibility
+  blocks: z.array(StructuredBlockSchema).optional(), // Structured blocks
+  theme: ThemeSchema.optional(), // Theme information
   suggestions: z.array(z.string()).optional() // Optional improvement suggestions
 })
 
-// Type exports
+// Export types
+export type BlockContent = z.infer<typeof BlockContentSchema>
+export type StructuredBlock = z.infer<typeof StructuredBlockSchema>
+export type Theme = z.infer<typeof ThemeSchema>
 export type Block = z.infer<typeof BlockSchema>
 export type Page = z.infer<typeof PageSchema>
 export type FlowPlan = z.infer<typeof FlowPlanSchema>

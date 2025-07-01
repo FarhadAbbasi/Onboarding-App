@@ -3,7 +3,7 @@ import {
     UiElements as Light,
     Headline,
     Subheadline,
-    CTAButton,
+    CTA,
     FeatureCard,
     TextInput,
     AlertMessage,
@@ -250,37 +250,35 @@ export default function DemoPage() {
                         onContextMenu={demoMode ? (e: React.MouseEvent) => {
                             e.preventDefault();
                             const rect = e.currentTarget.getBoundingClientRect();
-                            showElementCustomization('ctaButton1', 'CTAButton', { 
-                                x: rect.left + rect.width / 2, 
-                                y: rect.top 
+                            showElementCustomization('ctaButton1', 'CTA', {
+                                x: rect.left + rect.width / 2,
+                                y: rect.top
                             }, elementStates.ctaButton1);
                         } : undefined}
                         className={demoMode ? 'cursor-pointer' : ''}
                     >
-                        <CTAButton 
+                        <CTA
                             {...elementStates.ctaButton1}
-                            className={demoMode ? 'border-2 border-dashed border-blue-300 hover:border-blue-500' : ''}
-                        >
-                            Primary CTA
-                        </CTAButton>
+                            button_text="Primary CTA"
+                            headline="Ready to Get Started?"
+                        />
                     </div>
                     <div
                         onContextMenu={demoMode ? (e: React.MouseEvent) => {
                             e.preventDefault();
                             const rect = e.currentTarget.getBoundingClientRect();
-                            showElementCustomization('ctaButton2', 'CTAButton', { 
-                                x: rect.left + rect.width / 2, 
-                                y: rect.top 
+                            showElementCustomization('ctaButton2', 'CTA', {
+                                x: rect.left + rect.width / 2,
+                                y: rect.top
                             }, elementStates.ctaButton2);
                         } : undefined}
                         className={demoMode ? 'cursor-pointer' : ''}
                     >
-                        <CTAButton 
+                        <CTA
                             {...elementStates.ctaButton2}
-                            className={`hover:bg-gray-50 ${demoMode ? 'border-2 border-dashed border-blue-300 hover:border-blue-500' : ''}`}
-                        >
-                            Secondary CTA
-                        </CTAButton>
+                            button_text="Secondary CTA"
+                            headline="Or Learn More"
+                        />
                     </div>
                 </div>
                 
@@ -345,14 +343,13 @@ export default function DemoPage() {
                     ))}
                 </div>
                 <div className="mt-10 flex justify-center gap-4">
-                    <CTAButton colorScheme="indigo">Primary CTA</CTAButton>
-                    <CTAButton 
+                    <CTA button_text="Primary CTA" colorScheme="indigo" />
+                    <CTA 
+                        button_text="Secondary CTA"
                         variant="outline" 
                         colorScheme="gray"
                         className="hover:bg-gray-50"
-                    >
-                        Secondary CTA
-                    </CTAButton>
+                    />
                 </div>
                 <div className="mx-auto mt-10 max-w-sm">
                     <TextInput 
@@ -415,14 +412,13 @@ export default function DemoPage() {
                     ))}
                 </div>
                 <div className="mt-10 flex justify-center gap-4">
-                    <CTAButton colorScheme="pink" size="xl">Love It</CTAButton>
-                    <CTAButton 
+                    <CTA button_text="Love It" colorScheme="pink" size="xl" />
+                    <CTA 
+                        button_text="Maybe Later"
                         variant="outline" 
                         colorScheme="pink"
                         size="xl"
-                    >
-                        Maybe Later
-                    </CTAButton>
+                    />
                 </div>
                 <div className="mx-auto mt-10 max-w-sm">
                     <TextInput
@@ -473,20 +469,17 @@ export default function DemoPage() {
                     ))}
                 </div>
                 <div className="mt-10 flex justify-center gap-4">
-                    <CTAButton 
+                    <CTA 
+                        button_text="Get Started"
                         colorScheme="indigo" 
                         size="xl"
-                        rightIcon={<span>→</span>}
-                    >
-                        Get Started
-                    </CTAButton>
-                    <CTAButton 
+                    />
+                    <CTA 
+                        button_text="Learn More"
                         variant="ghost" 
                         colorScheme="gray"
                         size="xl"
-                    >
-                        Learn More
-                    </CTAButton>
+                    />
                 </div>
                 <div className="mx-auto mt-10 max-w-sm">
                     <TextInput

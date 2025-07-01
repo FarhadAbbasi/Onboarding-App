@@ -2,7 +2,7 @@ import React from "react";
 import {
     Headline,
     Subheadline,
-    CTAButton,
+    CTA,
     FeatureCard,
     TextInput,
     AlertMessage,

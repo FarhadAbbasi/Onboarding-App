@@ -4,7 +4,7 @@ import ContentEditorCanvas from './ContentEditorCanvas';
 import ContentEditorProperties from './ContentEditorProperties';
 import DragDropDemo from './DragDropDemo';
 import SidebarDropDemo from './SidebarDropDemo';
-import { AlertMessage, CTAButton, FeatureCard, Footer, Headline, StyledLink, Subheadline, Testimonial, TextInput } from '../ui/UIElements';
+import { AlertMessage, CTA, FeatureCard, Footer, Headline, StyledLink, Subheadline, Testimonial, TextInput } from '../ui/UIElements';
 import DemoPage from '../ui/DemoPage';
 
 const ContentEditor: React.FC = () => {

@@ -157,19 +157,35 @@ export async function generatePageContent(
   })
 
   const prompt = `
-You are an expert mobile onboarding designer. Create a beautiful, modern onboarding page using ONLY our predefined customizable UI elements.
+You are an expert onboarding designer creating beautiful mobile app pages using a component library.
 
-CRITICAL STRUCTURE REQUIREMENTS:
-- The <body> must contain a single <main> wrapper for theme/background/layout
-- Inside <main>, use ONLY these allowed elements as DIRECT CHILDREN:
-  * <h1> for headlines (add data-element="headline")
-  * <h2> for subheadlines (add data-element="subheadline") 
-  * <p> for paragraphs (add data-element="paragraph")
-  * <button> for CTAs (add data-element="cta")
-  * <ul> for feature lists (add data-element="feature")
-  * <blockquote> for testimonials (add data-element="testimonial")
-  * <a> for links (add data-element="link")
-  * <footer> for footers (add data-element="footer")
+IMPORTANT: Generate ONLY structured component data. DO NOT generate HTML.
+
+Available Components:
+- headline: Main titles (properties: text, colorScheme, size)
+- subheadline: Supporting text (properties: text, colorScheme, size)
+- paragraph: Body text (properties: text, colorScheme, size)
+- cta: Call-to-action buttons (properties: button_text, headline, colorScheme, size, variant)
+- feature-list: Feature lists (properties: features array, colorScheme, size)
+- testimonial: Customer testimonials (properties: quote, author, role, company, colorScheme)
+- text-input: Input fields (properties: label, placeholder, required, colorScheme, size)
+- alert: Notifications (properties: variant, title, message, colorScheme)
+- link: Clickable links (properties: text, href, colorScheme, variant, underline)
+- permission-request: Permission prompts (properties: title, description, button_text, colorScheme)
+- spacer: Spacing elements (properties: height, colorScheme)
+- icon: Icons/emojis (properties: icon, size, colorScheme, centered)
+- footer: Page footer (properties: text, colorScheme, size)
+
+IMPORTANT LAYOUT GUIDELINES:
+- Use spacer components between sections for proper spacing
+- Add icons to make pages more visually appealing
+- For signup/login pages, use individual text-input and cta components
+- Use appropriate colorSchemes that complement each other
+- Vary component sizes for visual hierarchy
+
+Available colorSchemes: indigo, blue, green, red, yellow, purple, pink, gray, emerald, cyan, orange, slate
+Available sizes: xs, sm, md, lg, xl, 2xl
+Available variants: solid, outline, ghost
 
 Page Details:
 - Page ID: ${page.id}
@@ -180,33 +196,75 @@ Page Details:
 - Tone: ${tone}
 - App URL: ${appUrl}
 
-Color Scheme: ${colorScheme ? `primary:${colorScheme.primary}, secondary:${colorScheme.secondary}, accent:${colorScheme.accent}` : 'modern pastel palette (indigo, blue, emerald)'}
+Color Preference: ${colorScheme ? `primary:${colorScheme.primary}, secondary:${colorScheme.secondary}` : 'indigo and blue'}
 
-DESIGN REQUIREMENTS:
-1. Mobile-first design (320-414px viewport)
-2. Use Tailwind CSS classes for all styling
-3. Include smooth animations with CSS @keyframes
-4. Modern gradients and beautiful spacing
-5. Each element must have data-element attribute for editing
-6. WCAG accessibility compliance
-7. Beautiful color schemes using indigo, blue, green, purple color families
-8. Engaging content that matches the ${tone} tone
-
-CONTENT STRUCTURE:
-- Start with an engaging headline that captures the app's value
-- Include a supportive subheadline explaining the benefit
-- Add 2-3 feature highlights as a list
-- Include a compelling CTA button
-- Consider adding a testimonial if it fits the page purpose
+REQUIREMENTS:
+1. Create 3-5 components that tell a compelling story for this onboarding page
+2. Use engaging, ${tone} tone content
+3. Make content specific to ${category} apps
+4. Choose appropriate colorSchemes that complement each other
+5. Vary component sizes for visual hierarchy
 
 Return ONLY this JSON structure:
 {
   "page_id": "${page.id}",
-  "html_content": "<!DOCTYPE html>...",
-  "suggestions": ["optional improvement suggestions"]
-}`;
-  
-  
+  "blocks": [
+    {
+      "type": "headline",
+      "content": {
+        "text": "Welcome to ${appName}",
+        "colorScheme": "indigo",
+        "size": "xl"
+      }
+    },
+    {
+      "type": "subheadline", 
+      "content": {
+        "text": "Your journey starts here",
+        "colorScheme": "gray",
+        "size": "lg"
+      }
+    },
+    {
+      "type": "spacer",
+      "content": {
+        "height": "md"
+      }
+    },
+    {
+      "type": "feature-list",
+      "content": {
+        "features": ["Amazing Feature 1", "Incredible Feature 2", "Fantastic Feature 3"],
+        "colorScheme": "blue",
+        "size": "md"
+      }
+    },
+    {
+      "type": "spacer",
+      "content": {
+        "height": "lg"
+      }
+    },
+    {
+      "type": "cta",
+      "content": {
+        "button_text": "Get Started",
+        "headline": "Ready to begin?",
+        "colorScheme": "indigo",
+        "size": "lg",
+        "variant": "solid"
+      }
+    }
+  ],
+  "theme": {
+    "backgroundClass": "bg-gradient-to-br from-indigo-50 to-blue-50",
+    "textClass": "text-gray-900",
+    "accentColor": "indigo"
+  }
+}
+
+Create compelling, engaging content that fits the page purpose: ${page.purpose}
+`;
 
   try {
     const completion = await openai.chat.completions.create({
@@ -214,29 +272,96 @@ Return ONLY this JSON structure:
       messages: [
         {
           role: 'system',
-          content: 'You are an expert copywriter creating engaging onboarding content. Always respond with valid JSON only. Do not include markdown code blocks or any other formatting.'
+          content: 'You are an expert onboarding designer. Generate structured component data ONLY. Return valid JSON without markdown blocks or explanations.'
         },
         {
           role: 'user',
           content: prompt
         }
       ],
-      temperature: 0.8,
-      max_tokens: 1500
+      temperature: 0.7,
+      max_tokens: 1500,
+      response_format: { type: "json_object" }
     })
 
     const content = completion.choices[0]?.message?.content
     if (!content) {
       throw new Error('No content generated')
     }
-
-    // Clean the response by removing markdown code blocks
-    const cleanedContent = content.replace(/```json\s*|```\s*/g, '').trim()
-    const parsed = JSON.parse(cleanedContent)
-    return AIPageContentResponseSchema.parse(parsed)
+    
+    const parsed = JSON.parse(content)
+    
+    // Create response in expected format
+    const response = {
+      page_id: parsed.page_id || page.id,
+      html_content: '', // Not needed for component-based approach
+      blocks: parsed.blocks || [],
+      theme: parsed.theme || {
+        backgroundClass: 'bg-gradient-to-br from-indigo-50 to-blue-50',
+        textClass: 'text-gray-900',
+        accentColor: 'indigo'
+      },
+      suggestions: []
+    };
+    
+    return AIPageContentResponseSchema.parse(response)
   } catch (error) {
-    console.error('Page content generation error:', error)
-    throw new Error('Failed to generate page content. Please try again.')
+    // Fallback with manual retry
+    try {
+      const fallbackCompletion = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'system',
+            content: 'Generate component data as JSON only. No markdown.'
+          },
+          {
+            role: 'user',
+            content: `Create onboarding components for "${page.title}" page. Return JSON with blocks array containing headline, subheadline, feature-list, and cta components.`
+          }
+        ],
+        temperature: 0.5,
+        max_tokens: 1000
+      })
+
+      const fallbackContent = fallbackCompletion.choices[0]?.message?.content
+      if (!fallbackContent) {
+        throw new Error('No fallback content generated')
+      }
+
+      const cleanedContent = fallbackContent.replace(/```json\s*|```\s*/g, '').trim()
+      const fallbackParsed = JSON.parse(cleanedContent)
+      
+      // Ensure proper structure
+      const fallbackResponse = {
+        page_id: page.id,
+        html_content: '',
+        blocks: fallbackParsed.blocks || [
+          {
+            type: 'headline',
+            content: { text: `Welcome to ${appName}`, colorScheme: 'indigo', size: 'xl' }
+          },
+          {
+            type: 'subheadline', 
+            content: { text: 'Get started with your new experience', colorScheme: 'gray', size: 'lg' }
+          },
+          {
+            type: 'cta',
+            content: { button_text: 'Get Started', colorScheme: 'indigo', size: 'lg', variant: 'solid' }
+          }
+        ],
+        theme: {
+          backgroundClass: 'bg-gradient-to-br from-indigo-50 to-blue-50',
+          textClass: 'text-gray-900',
+          accentColor: 'indigo'
+        },
+        suggestions: []
+      };
+      
+      return AIPageContentResponseSchema.parse(fallbackResponse)
+    } catch (fallbackError) {
+      throw new Error('Failed to generate page content. Please try again.')
+    }
   }
 }
 

@@ -30,7 +30,7 @@ import {
   Headline, 
   Subheadline, 
   FeatureCard, 
-  CTAButton, 
+  CTA, 
   AlertMessage, 
   Testimonial,
   type ColorScheme
@@ -199,12 +199,11 @@ function EditableBlock({ block, onUpdate, onDelete, isDragging }: EditableBlockP
       
       case 'cta':
         return (
-          <CTAButton
+          <CTA
+            button_text={content.text || content.button_text || 'Call to Action'}
             colorScheme={content.colorScheme || 'indigo'}
             size={content.size || 'lg'}
-          >
-            {content.text || content.button_text || 'Call to Action'}
-          </CTAButton>
+          />
         );
       
       case 'feature':

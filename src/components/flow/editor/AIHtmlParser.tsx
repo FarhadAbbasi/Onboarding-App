@@ -90,7 +90,32 @@ function extractBlockContent(el: HTMLElement, type: string): string {
 }
 
 export function parseAIHtmlToBlocksAndTheme(html: string): { blocks: ParsedBlock[]; theme: ParsedTheme } {
+  // Try to parse as structured JSON response first (new format)
+  try {
+    const jsonResponse = JSON.parse(html);
+    if (jsonResponse.blocks && Array.isArray(jsonResponse.blocks)) {
+      const blocks: ParsedBlock[] = jsonResponse.blocks.map((block: any, index: number) => ({
+        id: block.id || `block-${Date.now()}-${index}`,
+        type: block.type,
+        content: typeof block.content === 'object' ? JSON.stringify(block.content) : block.content,
+        styles: block.styles || undefined
+      }));
+      
+      const theme: ParsedTheme = {
+        html: JSON.stringify(jsonResponse.theme || {
+          backgroundClass: 'bg-gradient-to-br from-blue-50 to-indigo-50',
+          textClass: 'text-gray-900',
+          accentColor: 'indigo'
+        })
+      };
+      
+      return { blocks, theme };
+    }
+  } catch (error) {
+    // Not JSON, continue with HTML parsing
+  }
 
+  // Fallback to original HTML parsing logic
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
   const body = doc.body;
