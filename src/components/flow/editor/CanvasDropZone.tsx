@@ -9,7 +9,8 @@ import { useDroppable } from '@dnd-kit/core';
 import { 
   GripVertical, 
   Trash2, 
-  Edit3
+  Edit3,
+  Wand2
 } from 'lucide-react';
 import { 
   CTA,
@@ -22,9 +23,12 @@ import {
   FeatureList
 } from '../../ui/UIElements';
 import type { ParsedBlock, ParsedTheme } from './AIHtmlParser';
+import type { AIGeneratedTheme, ComponentCustomization } from '../../../lib/aiThemeGenerator';
 
 interface EditableBlockProps {
   block: ParsedBlock;
+  theme?: AIGeneratedTheme;
+  customization?: ComponentCustomization;
   onUpdate: (updates: Partial<ParsedBlock>) => void;
   onDelete: () => void;
   onSelect?: () => void;
@@ -32,7 +36,16 @@ interface EditableBlockProps {
   isDragging?: boolean;
 }
 
-function EditableBlock({ block, onUpdate, onDelete, onSelect, isSelected, isDragging }: EditableBlockProps) {
+function EditableBlock({ 
+  block, 
+  theme, 
+  customization, 
+  onUpdate, 
+  onDelete, 
+  onSelect, 
+  isSelected, 
+  isDragging 
+}: EditableBlockProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(block.content);
 
@@ -59,7 +72,6 @@ function EditableBlock({ block, onUpdate, onDelete, onSelect, isSelected, isDrag
 
   const handleEdit = () => {
     setIsEditing(true);
-    // Don't reset editContent here - use current block content
   };
 
   const handleSaveEdit = () => {
@@ -68,228 +80,316 @@ function EditableBlock({ block, onUpdate, onDelete, onSelect, isSelected, isDrag
   };
 
   const handleCancelEdit = () => {
-    setEditContent(block.content); // Reset to original
+    setEditContent(block.content);
     setIsEditing(false);
+  };
+
+  // Get component styling based on theme and customizations
+  const getComponentStyling = () => {
+    const content = block.content || {};
+    const styles = block.styles || {};
+    
+    // Start with styles-based styling, fallback to content, then defaults
+    let colorScheme = (styles as any)?.colorScheme || (content as any)?.colorScheme as ColorScheme || 'indigo';
+    let size = (styles as any)?.size || (content as any)?.size as Size || 'md';
+    let variant = (styles as any)?.variant || (content as any)?.variant || 'solid';
+    
+    // Apply customization overrides if available
+    if (customization) {
+      if (customization.colorScheme) {
+        colorScheme = customization.colorScheme as ColorScheme;
+      }
+      if (customization.size) {
+        size = customization.size as Size;
+      }
+      if (customization.variant) {
+        variant = customization.variant;
+      }
+    }
+
+    // Generate custom CSS from block styles, theme and customization
+    let customStyles: React.CSSProperties = {};
+    
+    // Apply block-level styles first
+    const blockStyles = block.styles || {};
+    if (blockStyles) {
+      if ((blockStyles as any).textAlign) {
+        customStyles.textAlign = (blockStyles as any).textAlign;
+      }
+      if ((blockStyles as any).fontWeight) {
+        customStyles.fontWeight = (blockStyles as any).fontWeight;
+      }
+      if ((blockStyles as any).marginTop) {
+        const marginMap = { xs: '0.25rem', sm: '0.5rem', md: '1rem', lg: '1.5rem', xl: '2rem' };
+        customStyles.marginTop = marginMap[(blockStyles as any).marginTop as keyof typeof marginMap] || (blockStyles as any).marginTop;
+      }
+      if ((blockStyles as any).marginBottom) {
+        const marginMap = { xs: '0.25rem', sm: '0.5rem', md: '1rem', lg: '1.5rem', xl: '2rem' };
+        customStyles.marginBottom = marginMap[(blockStyles as any).marginBottom as keyof typeof marginMap] || (blockStyles as any).marginBottom;
+      }
+    }
+    
+    // Apply customization overrides
+    if (customization?.customStyles) {
+      const customizationStyles = customization.customStyles;
+      
+      // Apply color overrides
+      if (customizationStyles.colors?.background) {
+        customStyles.backgroundColor = customizationStyles.colors.background;
+      }
+      if (customizationStyles.colors?.text) {
+        customStyles.color = customizationStyles.colors.text;
+      }
+      if (customizationStyles.colors?.border) {
+        customStyles.borderColor = customizationStyles.colors.border;
+      }
+      
+      // Apply typography overrides
+      if (customizationStyles.typography?.fontSize) {
+        customStyles.fontSize = customizationStyles.typography.fontSize;
+      }
+      if (customizationStyles.typography?.fontWeight) {
+        customStyles.fontWeight = customizationStyles.typography.fontWeight;
+      }
+      if (customizationStyles.typography?.lineHeight) {
+        customStyles.lineHeight = customizationStyles.typography.lineHeight;
+      }
+      if (customizationStyles.typography?.textAlign) {
+        customStyles.textAlign = customizationStyles.typography.textAlign;
+      }
+      
+      // Apply spacing overrides
+      if (customizationStyles.spacing?.padding) {
+        customStyles.padding = customizationStyles.spacing.padding;
+      }
+      if (customizationStyles.spacing?.margin) {
+        customStyles.margin = customizationStyles.spacing.margin;
+      }
+      
+      // Apply effects overrides
+      if (customizationStyles.effects?.borderRadius) {
+        customStyles.borderRadius = customizationStyles.effects.borderRadius;
+      }
+      if (customizationStyles.effects?.boxShadow) {
+        customStyles.boxShadow = customizationStyles.effects.boxShadow;
+      }
+      if (customizationStyles.effects?.transition) {
+        customStyles.transition = customizationStyles.effects.transition;
+      }
+    }
+
+    return { colorScheme, size, variant, customStyles };
   };
 
   const renderComponent = () => {
     const content = block.content || {};
+    const styles = block.styles || {};
+    const { colorScheme, size, variant, customStyles } = getComponentStyling();
     
-    // Extract customizable properties with defaults
-    const colorScheme = (content as any)?.colorScheme as ColorScheme || 'indigo';
-    const size = (content as any)?.size as Size || 'md';
-    const variant = (content as any)?.variant || 'solid';
+    // Common wrapper for applying custom styles and selection
+    const WrapperDiv = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
+      <div 
+        style={{
+          ...customStyles,
+          // Ensure theme colors are applied when no custom styles exist
+          ...((!customStyles.backgroundColor && theme) && { backgroundColor: theme.neutralColors.surface }),
+          ...((!customStyles.color && theme) && { color: theme.neutralColors.text.primary }),
+          ...((!customStyles.fontFamily && theme) && { fontFamily: theme.typography.fontFamily.primary })
+        }}
+        className={`${className} ${isSelected ? 'ring-2 ring-blue-500 ring-offset-2 rounded' : ''} transition-all duration-200`}
+      >
+        {children}
+      </div>
+    );
 
     switch (block.type) {
       case 'headline':
         return (
-          <Headline
-            size={size === 'xs' ? 'sm' : size === 'sm' ? 'md' : size === 'md' ? 'lg' : size === 'lg' ? 'xl' : size === 'xl' ? '2xl' : '3xl'}
-            colorScheme={colorScheme}
-            className={`${isSelected ? 'ring-2 ring-blue-500' : ''}`}
-          >
-            {(content as any)?.headline || (content as any)?.text || 'Your Headline Here'}
-          </Headline>
+          <WrapperDiv>
+            <Headline
+              size={size === 'xs' ? 'sm' : size === 'sm' ? 'md' : size === 'md' ? 'lg' : size === 'lg' ? 'xl' : size === 'xl' ? '2xl' : '3xl'}
+              colorScheme={colorScheme}
+            >
+              {((content as any)?.headline || (content as any)?.text || 'Your Headline Here')}
+            </Headline>
+          </WrapperDiv>
         );
 
       case 'subheadline':
         return (
-          <Subheadline
-            size={size}
-            colorScheme={colorScheme}
-            className={`${isSelected ? 'ring-2 ring-blue-500' : ''}`}
-          >
-            {(content as any)?.subheadline || (content as any)?.text || 'Your subheadline description goes here'}
-          </Subheadline>
+          <WrapperDiv>
+            <Subheadline
+              size={size}
+              colorScheme={colorScheme}
+            >
+              {((content as any)?.text || 'Your subheadline here')}
+            </Subheadline>
+          </WrapperDiv>
         );
 
       case 'paragraph':
         return (
-          <p className={`text-${size} text-${colorScheme}-800 leading-relaxed ${isSelected ? 'ring-2 ring-blue-500 rounded p-2' : ''}`}>
-            {(content as any)?.text || 'Your paragraph text content goes here. Add meaningful content that engages your users.'}
-          </p>
+          <WrapperDiv>
+            <p className={`text-${colorScheme}-600 ${size === 'sm' ? 'text-sm' : size === 'lg' ? 'text-lg' : 'text-base'}`}>
+              {((content as any)?.text || 'Your paragraph text here')}
+            </p>
+          </WrapperDiv>
+        );
+
+      case 'spacer':
+        const spacerHeight = (styles as any)?.height || (content as any)?.height || 'md';
+        const heightMap = { xs: '0.5rem', sm: '1rem', md: '2rem', lg: '3rem', xl: '4rem', '2xl': '5rem' };
+        return (
+          <div style={{ height: heightMap[spacerHeight as keyof typeof heightMap] || '2rem' }} />
+        );
+
+      case 'icon':
+        const iconSize = (styles as any)?.size || (content as any)?.size || 'md';
+        const sizeMap = { xs: '1rem', sm: '1.5rem', md: '2rem', lg: '2.5rem', xl: '3rem', '2xl': '4rem' };
+        return (
+          <WrapperDiv className={(styles as any)?.centered || (content as any)?.centered ? 'text-center' : ''}>
+            <span style={{ fontSize: sizeMap[iconSize as keyof typeof sizeMap] || '2rem' }}>
+              {((content as any)?.icon || '⭐')}
+            </span>
+          </WrapperDiv>
         );
 
       case 'cta':
         return (
-          <div className="space-y-4">
-            {(content as any)?.headline && (
-              <Headline size="lg" colorScheme={colorScheme}>
-                {(content as any).headline}
-              </Headline>
-            )}
+          <WrapperDiv>
             <CTA
-              button_text={(content as any)?.button_text || (content as any)?.text || 'Get Started'}
-              headline={(content as any)?.headline}
+              button_text={((content as any)?.button_text || 'Click me')}
+              headline={((content as any)?.headline || 'Ready to get started?')}
               colorScheme={colorScheme}
               size={size}
-              variant={variant as any}
-              className={isSelected ? 'ring-2 ring-blue-500 rounded' : ''}
+              variant={variant}
             />
-          </div>
+          </WrapperDiv>
         );
 
       case 'feature-list':
         const features = (content as any)?.features || ['Feature 1', 'Feature 2', 'Feature 3'];
         return (
-          <div className={`${isSelected ? 'ring-2 ring-blue-500 rounded p-4' : ''}`}>
-            <FeatureList
-              title={(content as any)?.title || 'Key Features'}
+          <WrapperDiv>
+            <FeatureList 
               features={features}
               colorScheme={colorScheme}
               size={size}
-              titleSize={(content as any)?.titleSize || 'lg'}
-              titleColorScheme={(content as any)?.titleColorScheme || colorScheme}
-              variant="checkmarks"
             />
-          </div>
+          </WrapperDiv>
         );
 
       case 'testimonial':
         return (
-          <Testimonial
-            quote={(content as any)?.quote || (content as any)?.text || 'This product has transformed how we work. Highly recommended!'}
-            avatarUrl="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face"
-            name={(content as any)?.author || 'John Doe'}
-            role={(content as any)?.role || 'CEO'}
-            colorScheme={colorScheme}
-            variant={variant as any}
-            className={`${isSelected ? 'ring-2 ring-blue-500' : ''}`}
-          />
+          <WrapperDiv>
+            <Testimonial
+              quote={((content as any)?.quote || 'This app changed my life!')}
+              author={((content as any)?.author || 'Happy User')}
+              role={((content as any)?.role || 'Customer')}
+              company={((content as any)?.company || 'Company Inc.')}
+              colorScheme={colorScheme}
+              size={size}
+            />
+          </WrapperDiv>
         );
 
       case 'text-input':
-        const inputContent = typeof content === 'string' ? { label: content } : content as any;
         return (
-          <div className={`w-full ${isSelected ? 'ring-2 ring-blue-500 rounded p-2' : ''}`}>
-            <label className={`block text-sm font-medium text-${colorScheme}-700 mb-1`}>
-              {inputContent?.label || 'Input Label'}
-              {inputContent?.required && <span className="text-red-500 ml-1">*</span>}
-            </label>
-            <input
-              type="text"
-              placeholder={inputContent?.placeholder || 'Enter text...'}
-              className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-${colorScheme}-500 focus:border-${colorScheme}-500 text-${size}`}
-              disabled
-            />
-          </div>
-        );
-
-      case 'spacer':
-        const spacerHeight = {
-          xs: 'h-2',
-          sm: 'h-4', 
-          md: 'h-8',
-          lg: 'h-12',
-          xl: 'h-16',
-          '2xl': 'h-24'
-        }[(content as any)?.height || 'md'];
-        
-        return (
-          <div className={`w-full ${spacerHeight} ${isSelected ? 'ring-2 ring-blue-500 rounded bg-gray-100 border-2 border-dashed border-gray-300' : ''}`}>
-            {isSelected && (
-              <div className="flex items-center justify-center h-full text-xs text-gray-500">
-                Spacer ({(content as any)?.height || 'md'})
-              </div>
-            )}
-          </div>
-        );
-
-      case 'icon':
-        const iconSize = {
-          xs: 'text-sm',
-          sm: 'text-base',
-          md: 'text-xl', 
-          lg: 'text-3xl',
-          xl: 'text-4xl',
-          '2xl': 'text-6xl'
-        }[(content as any)?.size || 'lg'];
-        
-        const iconAlignment = (content as any)?.centered ? 'text-center' : 'text-left';
-        
-        return (
-          <div className={`w-full ${iconAlignment} ${isSelected ? 'ring-2 ring-blue-500 rounded p-2' : ''}`}>
-            <span className={`${iconSize} text-${colorScheme}-600`}>
-              {(content as any)?.icon || '⭐'}
-            </span>
-          </div>
+          <WrapperDiv>
+            <div className="space-y-2">
+              <label className={`block text-sm font-medium text-${colorScheme}-700`}>
+                {((content as any)?.label || 'Input Label')}
+              </label>
+              <input
+                type="text"
+                placeholder={((content as any)?.placeholder || 'Enter text...')}
+                required={((content as any)?.required || false)}
+                className={`w-full px-3 py-2 border border-${colorScheme}-300 rounded-lg focus:ring-2 focus:ring-${colorScheme}-500 focus:border-transparent`}
+              />
+            </div>
+          </WrapperDiv>
         );
 
       case 'alert':
+        const alertVariant = (content as any)?.variant || 'info';
+        const alertColorMap = {
+          info: 'blue',
+          success: 'green', 
+          warning: 'yellow',
+          error: 'red'
+        };
+        const alertColor = alertColorMap[alertVariant as keyof typeof alertColorMap] || colorScheme;
         return (
-          <div className={`p-4 rounded-md border ${isSelected ? 'ring-2 ring-blue-500' : ''}`}>
-            <div className="flex items-start">
-              <div className="flex-shrink-0">
-                {(content as any)?.variant === 'success' && <span className="text-green-500">✓</span>}
-                {(content as any)?.variant === 'error' && <span className="text-red-500">✕</span>}
-                {(content as any)?.variant === 'warning' && <span className="text-yellow-500">⚠</span>}
-                {(!((content as any)?.variant) || (content as any)?.variant === 'info') && <span className="text-blue-500">ℹ</span>}
-              </div>
-              <div className="ml-3">
-                {(content as any)?.title && (
-                  <h4 className={`text-${size} font-medium text-${colorScheme}-900`}>
-                    {(content as any).title}
-                  </h4>
-                )}
-                <p className={`text-${size} text-${colorScheme}-700`}>
-                  {(content as any)?.message || 'Alert message goes here'}
-                </p>
-              </div>
+          <WrapperDiv>
+            <div className={`p-4 rounded-lg bg-${alertColor}-50 border border-${alertColor}-200`}>
+              <h4 className={`font-medium text-${alertColor}-800`}>
+                {((content as any)?.title || 'Alert Title')}
+              </h4>
+              <p className={`text-sm text-${alertColor}-700 mt-1`}>
+                {((content as any)?.message || 'Alert message goes here')}
+              </p>
             </div>
-          </div>
+          </WrapperDiv>
         );
 
       case 'link':
         return (
-          <a
-            href="#"
-            className={`text-${colorScheme}-600 hover:text-${colorScheme}-500 transition-colors text-${size} ${
-              (content as any)?.underline !== false ? 'underline underline-offset-4' : ''
-            } ${(content as any)?.variant === 'bold' ? 'font-semibold' : ''} ${isSelected ? 'ring-2 ring-blue-500 rounded px-1' : ''}`}
-          >
-            {(content as any)?.text || 'Link Text'}
-          </a>
+          <WrapperDiv>
+            <a
+              href={((content as any)?.href || '#')}
+              className={`text-${colorScheme}-600 hover:text-${colorScheme}-800 ${
+                (styles as any)?.underline || (content as any)?.underline ? 'underline' : ''
+              } ${
+                (styles as any)?.fontWeight || (content as any)?.fontWeight === 'bold' ? 'font-bold' : ''
+              }`}
+            >
+              {((content as any)?.text || 'Link text')}
+            </a>
+          </WrapperDiv>
         );
 
       case 'permission-request':
         return (
-          <div className={`bg-white border border-gray-200 rounded-lg p-4 ${isSelected ? 'ring-2 ring-blue-500' : ''}`}>
-            <div className="text-center space-y-3">
-              <div className={`w-12 h-12 bg-${colorScheme}-100 rounded-full flex items-center justify-center mx-auto`}>
-                <span className={`text-${colorScheme}-600 text-xl`}>🔒</span>
-              </div>
-              <h3 className={`text-${size} font-semibold text-gray-900`}>
-                {(content as any)?.title || 'Permission Required'}
+          <WrapperDiv>
+            <div className={`p-6 rounded-lg bg-${colorScheme}-50 border border-${colorScheme}-200 text-center`}>
+              <h3 className={`text-lg font-semibold text-${colorScheme}-900 mb-2`}>
+                {((content as any)?.title || 'Permission Required')}
               </h3>
-              <p className={`text-sm text-gray-600`}>
-                {(content as any)?.description || 'This app needs permission to function properly'}
+              <p className={`text-${colorScheme}-700 mb-4`}>
+                {((content as any)?.description || 'We need permission to continue')}
               </p>
-              <button
-                className={`bg-${colorScheme}-600 text-white py-2 px-6 rounded-md hover:bg-${colorScheme}-700 transition-colors text-${size} font-medium`}
-                disabled
+              <Button
+                colorScheme={colorScheme}
+                size={size}
+                variant={variant}
               >
-                {(content as any)?.button_text || 'Allow'}
-              </button>
+                {((content as any)?.button_text || 'Allow')}
+              </Button>
             </div>
-          </div>
+          </WrapperDiv>
         );
 
       case 'footer':
         return (
-          <footer className={`py-6 text-center text-${size} text-${colorScheme}-600 border-t border-${colorScheme}-200 ${isSelected ? 'ring-2 ring-blue-500' : ''}`}>
-            {(content as any)?.text || '© 2024 Your Company. All rights reserved.'}
-          </footer>
+          <WrapperDiv>
+            <footer className={`text-center py-4 text-${colorScheme}-600 ${
+              size === 'sm' ? 'text-sm' : size === 'lg' ? 'text-lg' : 'text-base'
+            }`}>
+              {((content as any)?.text || 'Footer text here')}
+            </footer>
+          </WrapperDiv>
         );
 
       default:
-        // Fallback for unknown types
         return (
-          <div className={`p-4 border border-gray-200 rounded bg-gray-50 ${isSelected ? 'ring-2 ring-blue-500' : ''}`}>
-            <div className="text-sm text-gray-600 mb-2">Component: {block.type}</div>
-            <div className="text-xs text-gray-500 font-mono">
-              {typeof content === 'string' ? content : JSON.stringify(content, null, 2)}
+          <WrapperDiv>
+            <div className="p-4 bg-gray-100 rounded border-2 border-dashed border-gray-300">
+              <p className="text-gray-600 text-sm">Unknown block type: {block.type}</p>
+              <pre className="text-xs text-gray-500 mt-2 overflow-hidden">
+                {JSON.stringify(content, null, 2)}
+              </pre>
             </div>
-          </div>
+          </WrapperDiv>
         );
     }
   };
@@ -303,7 +403,7 @@ function EditableBlock({ block, onUpdate, onDelete, onSelect, isSelected, isDrag
           <input
             type="text"
             value={(editContent as any)?.text || (editContent as any)?.headline || (editContent as any)?.subheadline || ''}
-            onChange={(e) => setEditContent({ ...editContent, text: e.target.value, headline: e.target.value, subheadline: e.target.value })}
+            onChange={(e) => setEditContent({ ...editContent as any, text: e.target.value, headline: e.target.value, subheadline: e.target.value })}
             className="w-full p-2 border border-gray-300 rounded"
             placeholder={`Enter ${block.type} text`}
             autoFocus
@@ -516,7 +616,8 @@ function DropZone({ children, isEmpty }: DropZoneProps) {
 
 interface CanvasDropZoneProps {
   blocks: ParsedBlock[];
-  theme?: ParsedTheme;
+  theme?: AIGeneratedTheme | null;
+  componentCustomizations?: ComponentCustomization[];
   onBlockUpdate: (blockId: string, updates: Partial<ParsedBlock>) => void;
   onBlockDelete: (blockId: string) => void;
   onBlockSelect?: (block: ParsedBlock) => void;
@@ -528,6 +629,7 @@ interface CanvasDropZoneProps {
 export function CanvasDropZone({ 
   blocks, 
   theme,
+  componentCustomizations = [],
   onBlockUpdate, 
   onBlockDelete, 
   onBlockSelect,
@@ -535,70 +637,62 @@ export function CanvasDropZone({
   activeId,
   className 
 }: CanvasDropZoneProps) {
-  // Extract theme from structured data
-  const getThemeStyles = () => {
-    if (!theme?.html) return { backgroundClass: 'bg-gradient-to-br from-blue-50 to-indigo-50', textClass: 'text-gray-900' };
-    
-    try {
-      // Try to parse theme as JSON first (new structure)
-      const themeData = JSON.parse(theme.html);
-      return {
-        backgroundClass: themeData.backgroundClass || 'bg-gradient-to-br from-blue-50 to-indigo-50',
-        textClass: themeData.textClass || 'text-gray-900'
-      };
-    } catch (error) {
-      // Fallback to old HTML parsing
-      try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(theme.html, 'text/html');
-        const main = doc.body?.querySelector('main');
-        const mainClasses = main?.className || '';
-        
-        const backgroundMatch = mainClasses.match(/bg-[\w-]+/g);
-        const textMatch = mainClasses.match(/text-[\w-]+/g);
-        
-        return {
-          backgroundClass: backgroundMatch?.join(' ') || 'bg-gradient-to-br from-blue-50 to-indigo-50',
-          textClass: textMatch?.join(' ') || 'text-gray-900'
-        };
-      } catch {
-        return { backgroundClass: 'bg-gradient-to-br from-blue-50 to-indigo-50', textClass: 'text-gray-900' };
-      }
-    }
+  const blockIds = blocks.map(block => block.id);
+
+  const { isOver } = useDroppable({
+    id: 'canvas-drop-zone',
+  });
+
+  // Get customization for a specific component type
+  const getCustomizationForType = (type: string): ComponentCustomization | undefined => {
+    return componentCustomizations.find(c => c.type === type);
   };
-  
-  const { backgroundClass, textClass } = getThemeStyles();
+
+  const getThemeStyles = () => {
+    if (!theme) return {};
+    
+    return {
+      backgroundColor: theme.neutralColors.background,
+      color: theme.neutralColors.text.primary,
+      fontFamily: theme.typography.fontFamily.primary,
+    };
+  };
   
   return (
     <div className={`min-h-full ${className}`}>
-      {/* Canvas container with clean theme application */}
-      <div className={`canvas-theme-container min-h-full p-8 pl-14 ${backgroundClass} ${textClass}`}>
+      {/* Canvas container with theme application */}
+      <div 
+        className="canvas-theme-container min-h-full p-8 pl-14"
+        style={getThemeStyles()}
+      >
         <DropZone isEmpty={blocks.length === 0}>
           <SortableContext items={blocks.map(b => b.id)} strategy={verticalListSortingStrategy}>
-            <div className="space-y-6 min-h-[400px]">
-              {blocks.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
-                  <div className="text-4xl mb-4">👆</div>
-                  <h3 className="text-lg font-medium mb-2">Start Building</h3>
-                  <p className="text-sm">Drag components from the left sidebar to get started</p>
-                  <div className="mt-4 p-4 bg-gray-100 rounded-lg max-w-sm mx-auto">
-                    <p className="text-xs text-gray-600">
-                      💡 <strong>Tip:</strong> Select any component to customize its colors, size, and content in the properties panel
-                    </p>
+            <div className="space-y-6">
+              {blocks.map((block) => (
+                <EditableBlock
+                  key={block.id}
+                  block={block}
+                  theme={theme}
+                  customization={getCustomizationForType(block.type)}
+                  onUpdate={(updates) => onBlockUpdate(block.id, updates)}
+                  onDelete={() => onBlockDelete(block.id)}
+                  onSelect={() => onBlockSelect?.(block)}
+                  isSelected={selectedBlockId === block.id}
+                  isDragging={activeId === block.id}
+                />
+              ))}
+
+              {/* Empty state when no blocks */}
+              {blocks.length === 0 && (
+                <div className="text-center py-16 text-gray-500">
+                  <div className="mb-4">
+                    <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
                   </div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No components yet</h3>
+                  <p className="text-sm text-gray-500">Drag components from the library to build your page</p>
                 </div>
-              ) : (
-                blocks.map(block => (
-                  <EditableBlock
-                    key={block.id}
-                    block={block}
-                    onUpdate={(updates) => onBlockUpdate(block.id, updates)}
-                    onDelete={() => onBlockDelete(block.id)}
-                    onSelect={() => onBlockSelect?.(block)}
-                    isSelected={selectedBlockId === block.id}
-                    isDragging={activeId === block.id}
-                  />
-                ))
               )}
             </div>
           </SortableContext>

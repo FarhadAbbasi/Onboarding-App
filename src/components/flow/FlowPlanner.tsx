@@ -1,10 +1,11 @@
 import React, { useState } from 'react'
-import { Wand2, ArrowRight, Clock } from 'lucide-react'
+import { Wand2, ArrowRight, Clock, Bug } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { generateFlowPlan } from '../../lib/openai'
 import { LoadingSpinner } from '../ui/LoadingSpinner'
 import type { FlowPlan } from '../../lib/schemas'
 import { supabase } from '../../lib/supabase'
+import { OpenAITest } from '../debug/OpenAITest'
 
 interface FlowPlannerProps {
   projectId: string;
@@ -31,6 +32,7 @@ export function FlowPlanner({ projectId, projectName, projectUrl, category, note
   })
   const [loading, setLoading] = useState(false)
   const [generatedFlow, setGeneratedFlow] = useState<FlowPlan | null>(null)
+  const [showDebug, setShowDebug] = useState(false)
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setFormData(prev => ({
@@ -53,6 +55,7 @@ export function FlowPlanner({ projectId, projectName, projectUrl, category, note
     setLoading(true)
 
     try {
+      console.log('[FlowPlanner] Starting flow generation...')
       const response = await generateFlowPlan(
         formData.openaiKey,
         projectName,
@@ -62,11 +65,13 @@ export function FlowPlanner({ projectId, projectName, projectUrl, category, note
         formData.tone,
         notes
       )
+      console.log('[FlowPlanner] Flow generated successfully:', response)
       setGeneratedFlow(response.flow_plan)
       toast.success('Flow plan generated!')
     } catch (error) {
-      console.error('Flow generation error:', error)
-      toast.error('Failed to generate flow plan. Please try again.')
+      console.error('[FlowPlanner] Flow generation error:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      toast.error(errorMessage)
     } finally {
       setLoading(false)
     }
@@ -82,9 +87,24 @@ export function FlowPlanner({ projectId, projectName, projectUrl, category, note
         setLoading(false);
         return;
       }
+
+      // First, check if pages already exist for this project
+      const { data: existingPages } = await supabase
+        .from('onboarding_pages')
+        .select('id, title, order_index')
+        .eq('project_id', projectId)
+        .order('order_index');
+
+      if (existingPages && existingPages.length > 0) {
+        console.log('[FlowPlanner] Pages already exist for project, skipping creation');
+        onFlowGenerated(generatedFlow, formData.openaiKey);
+        return;
+      }
+
+      // Create new pages using deterministic page_id based on title
       const pagesToInsert = generatedFlow.pages.map((page: any, idx: number) => ({
         project_id: projectId,
-        page_id: page.id,
+        page_id: `${projectId}-${page.title.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${idx}`,
         title: page.title,
         purpose: page.purpose,
         order_index: idx,
@@ -92,21 +112,17 @@ export function FlowPlanner({ projectId, projectName, projectUrl, category, note
         theme: '',
       }));
       
-      // Use upsert instead of insert to handle existing records
-      const { error: upsertError } = await supabase
+      const { error: insertError } = await supabase
         .from('onboarding_pages')
-        .upsert(pagesToInsert, { 
-          onConflict: 'project_id,page_id',
-          ignoreDuplicates: false 
-        });
+        .insert(pagesToInsert);
         
-      if (upsertError) {
-        console.error('[FlowPlanner] Error upserting onboarding_pages:', upsertError);
+      if (insertError) {
+        console.error('[FlowPlanner] Error inserting onboarding_pages:', insertError);
         toast.error('Failed to save onboarding pages.');
         setLoading(false);
         return;
       } else {
-        console.log('[FlowPlanner] Upserted onboarding_pages:', pagesToInsert);
+        console.log('[FlowPlanner] Inserted onboarding_pages:', pagesToInsert);
       }
       onFlowGenerated(generatedFlow, formData.openaiKey);
     } catch (error) {
@@ -185,6 +201,77 @@ export function FlowPlanner({ projectId, projectName, projectUrl, category, note
         </p>
       </div>
 
+      {/* AI Enhancement Roadmap */}
+      <div className="mb-8 p-6 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg border border-purple-200">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg">
+            <Wand2 className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">AI-Enhanced Flow Generation</h3>
+            <p className="text-sm text-purple-600">Advanced features for intelligent page creation</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div className="bg-white p-4 rounded-lg border border-purple-100">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                <span className="text-blue-600 font-semibold text-sm">1</span>
+              </div>
+              <h4 className="font-medium text-gray-900">Smart Theme Generation</h4>
+            </div>
+            <p className="text-sm text-gray-600">AI analyzes your project and generates custom color schemes, typography, and visual themes</p>
+          </div>
+
+          <div className="bg-white p-4 rounded-lg border border-purple-100">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                <span className="text-green-600 font-semibold text-sm">2</span>
+              </div>
+              <h4 className="font-medium text-gray-900">Intelligent Components</h4>
+            </div>
+            <p className="text-sm text-gray-600">Pre-built UI components automatically customized to match your brand and user flow</p>
+          </div>
+
+          <div className="bg-white p-4 rounded-lg border border-purple-100">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
+                <span className="text-purple-600 font-semibold text-sm">3</span>
+              </div>
+              <h4 className="font-medium text-gray-900">Drag & Drop Editor</h4>
+            </div>
+            <p className="text-sm text-gray-600">Visual editor with live preview in device frames for real-time customization</p>
+          </div>
+        </div>
+
+        <div className="bg-white/70 rounded-lg p-4 border border-purple-100">
+          <div className="flex items-center gap-2 text-sm text-purple-700">
+            <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse"></div>
+            <span className="font-medium">Enhanced Mode:</span>
+            <span>All generated pages will include custom themes, styled components, and drag-and-drop editing capabilities</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Debug Panel Toggle */}
+      <div className="mb-6 flex justify-center">
+        <button
+          onClick={() => setShowDebug(!showDebug)}
+          className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+        >
+          <Bug className="w-4 h-4" />
+          {showDebug ? 'Hide' : 'Show'} API Debug Tools
+        </button>
+      </div>
+
+      {/* Debug Panel */}
+      {showDebug && (
+        <div className="mb-8">
+          <OpenAITest />
+        </div>
+      )}
+
       <div className="space-y-6">
         <div>
           <label htmlFor="featureFocus" className="block text-sm font-medium text-gray-700 mb-2">
@@ -203,7 +290,7 @@ export function FlowPlanner({ projectId, projectName, projectUrl, category, note
 
         <div>
           <label htmlFor="tone" className="block text-sm font-medium text-gray-700 mb-2">
-            Tone & Style
+            Communication Tone
           </label>
           <select
             id="tone"
@@ -218,16 +305,10 @@ export function FlowPlanner({ projectId, projectName, projectUrl, category, note
               </option>
             ))}
           </select>
-        </div>
-
-        <div className="border-t pt-6">
-          <div className="flex items-center gap-2 mb-3">
-            <Wand2 size={16} className="text-blue-600" />
-            <span className="text-sm font-medium text-gray-700">AI Flow Generation</span>
           </div>
           
           <div>
-            <label htmlFor="openaiKey" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="openaiKey" className="block text-sm font-medium text-gray-700 mb-2">
               OpenAI API Key *
             </label>
             <input
@@ -240,19 +321,8 @@ export function FlowPlanner({ projectId, projectName, projectUrl, category, note
               onChange={handleInputChange}
             />
             <p className="text-xs text-gray-500 mt-1">
-              Your API key is used only for this request and never stored.
-            </p>
-          </div>
-        </div>
-
-        <div className="bg-blue-50 rounded-lg p-4">
-          <h3 className="font-medium text-blue-900 mb-2">What you'll get:</h3>
-          <ul className="text-sm text-blue-800 space-y-1">
-            <li>• Complete multi-page onboarding flow structure</li>
-            <li>• Optimized page sequence for your app category</li>
-            <li>• Smart suggestions for essential screens (signup, permissions, tutorial)</li>
-            <li>• Estimated completion time for users</li>
-          </ul>
+            Your API key is only used for this session and not stored permanently
+          </p>
         </div>
 
         <button
@@ -260,9 +330,17 @@ export function FlowPlanner({ projectId, projectName, projectUrl, category, note
           disabled={loading || !formData.featureFocus.trim() || !formData.openaiKey.trim()}
           className="btn-primary w-full flex items-center justify-center gap-2"
         >
-          {loading && <LoadingSpinner size="sm" />}
+          {loading ? (
+            <>
+              <LoadingSpinner size="sm" />
+              Generating Flow Plan...
+            </>
+          ) : (
+            <>
           <Wand2 size={16} />
-          <span>Generate Onboarding Flow</span>
+              Generate Onboarding Flow
+            </>
+          )}
         </button>
       </div>
     </div>

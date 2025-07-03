@@ -15,6 +15,8 @@ import { ComponentLibrary } from './ComponentLibrary';
 import { CanvasDropZone } from './CanvasDropZone';
 import { ComponentProperties } from './ComponentProperties';
 import type { ParsedBlock, ParsedTheme } from './AIHtmlParser';
+import type { AIGeneratedTheme, ComponentCustomization } from '../../../lib/aiThemeGenerator';
+import { applyThemeToDocument } from '../../../lib/aiThemeGenerator';
 import toast from 'react-hot-toast';
 
 interface EditorLayoutProps {
@@ -23,6 +25,8 @@ interface EditorLayoutProps {
   projectName: string;
   pageTitle: string;
   previewMode: 'mobile' | 'desktop';
+  currentTheme?: AIGeneratedTheme;
+  componentCustomizations?: ComponentCustomization[];
   onSave?: (blocks: ParsedBlock[], theme: ParsedTheme) => void;
 }
 
@@ -32,10 +36,13 @@ export function EditorLayout({
   projectName, 
   pageTitle, 
   previewMode,
+  currentTheme: propTheme,
+  componentCustomizations: propCustomizations,
   onSave
 }: EditorLayoutProps) {
   const [blocks, setBlocks] = useState<ParsedBlock[]>([]);
-  const [theme, setTheme] = useState<ParsedTheme>({ html: '' });
+  const [theme, setTheme] = useState<AIGeneratedTheme | null>(propTheme || null);
+  const [componentCustomizations, setComponentCustomizations] = useState<ComponentCustomization[]>(propCustomizations || []);
   const [loading, setLoading] = useState(true);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedBlock, setSelectedBlock] = useState<ParsedBlock | null>(null);
@@ -48,12 +55,14 @@ export function EditorLayout({
     })
   );
 
-  // Load blocks and theme from database
+  // Load all data: blocks, theme, and customizations
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
       try {
-        // Fetch blocks
+        console.log('🎨 [EditorLayout] Loading data for project:', projectId, 'page:', pageId);
+
+        // 1. Load blocks from content_blocks table
         const { data: blockRows, error: blockError } = await supabase
           .from('content_blocks')
           .select('*')
@@ -62,36 +71,84 @@ export function EditorLayout({
           .order('order_index', { ascending: true });
 
         if (blockError) {
-          console.error('[EditorLayout] Error fetching blocks:', blockError);
+          console.error('❌ [EditorLayout] Error fetching blocks:', blockError);
         }
 
-        // Fetch theme
-        const { data: pageRow, error: pageError } = await supabase
-          .from('onboarding_pages')
-          .select('theme')
-          .eq('project_id', projectId)
-          .eq('page_id', pageId)
-          .single();
+        // 2. Load theme from project_themes table (if not provided via props)
+        let loadedTheme = propTheme;
+        if (!loadedTheme) {
+          const { data: themeRow, error: themeError } = await supabase
+            .from('project_themes')
+            .select('*')
+            .eq('project_id', projectId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-        if (pageError && !pageError.message.includes('no rows')) {
-          console.error('[EditorLayout] Error fetching theme:', pageError);
+          if (themeError && !themeError.message.includes('no rows')) {
+            console.error('❌ [EditorLayout] Error fetching theme:', themeError);
+          } else if (themeRow) {
+            try {
+              loadedTheme = JSON.parse(themeRow.theme_data) as AIGeneratedTheme;
+              console.log('🎨 [EditorLayout] Loaded theme:', loadedTheme?.name || 'unnamed');
+            } catch (e) {
+              console.error('❌ [EditorLayout] Failed to parse theme data:', e);
+            }
+          }
         }
 
+        // 3. Load component customizations from component_customizations table
+        let loadedCustomizations = propCustomizations || [];
+        if (!propCustomizations) {
+          const { data: customizationRows, error: customizationError } = await supabase
+            .from('component_customizations')
+            .select('*')
+            .eq('project_id', projectId);
+
+          if (customizationError && !customizationError.message.includes('no rows')) {
+            console.error('❌ [EditorLayout] Error fetching customizations:', customizationError);
+          } else if (customizationRows && customizationRows.length > 0) {
+            loadedCustomizations = customizationRows.map((row: any) => {
+              try {
+                return JSON.parse(row.customization_data) as ComponentCustomization;
+              } catch (e) {
+                console.error('❌ [EditorLayout] Failed to parse customization data:', e);
+                return null;
+              }
+            }).filter(Boolean) as ComponentCustomization[];
+            console.log('🎨 [EditorLayout] Loaded customizations:', loadedCustomizations.length, 'items');
+          }
+        }
+
+        // 4. Process loaded blocks with proper content/styles parsing
         const loadedBlocks = blockRows?.map((b: any) => ({
           id: b.block_id,
           type: b.type,
           content: typeof b.content === 'string' && b.content.trim().startsWith('{') 
             ? JSON.parse(b.content) 
             : b.content,
-          styles: b.styles || undefined,
+          styles: b.styles && typeof b.styles === 'string' && b.styles.trim().startsWith('{')
+            ? JSON.parse(b.styles)
+            : (b.styles || {}),
+          order_index: b.order_index
         })) || [];
 
-        console.log('[EditorLayout] Loaded blocks from database:', loadedBlocks.length, 'blocks for page:', pageId);
+        console.log('📦 [EditorLayout] Loaded blocks:', loadedBlocks.length, 'blocks');
+        console.log('🎨 [EditorLayout] Theme loaded:', !!loadedTheme);
+        console.log('🎨 [EditorLayout] Customizations loaded:', loadedCustomizations.length);
         
-        setBlocks(loadedBlocks);
-        setTheme(pageRow?.theme ? { html: pageRow.theme } : { html: '' });
+        // 5. Apply theme to document if available
+        if (loadedTheme) {
+          applyThemeToDocument(loadedTheme);
+          console.log('✅ [EditorLayout] Applied theme to document');
+        }
+
+                 // 6. Update state
+         setBlocks(loadedBlocks);
+         setTheme(loadedTheme || null);
+         setComponentCustomizations(loadedCustomizations);
       } catch (error) {
-        console.error('[EditorLayout] Error loading data:', error);
+        console.error('❌ [EditorLayout] Error loading data:', error);
         toast.error('Failed to load page data');
       } finally {
         setLoading(false);
@@ -101,7 +158,15 @@ export function EditorLayout({
     if (projectId && pageId) {
       loadData();
     }
-  }, [projectId, pageId]);
+  }, [projectId, pageId, propTheme, propCustomizations]);
+
+  // Apply theme when it changes
+  useEffect(() => {
+    if (theme) {
+      applyThemeToDocument(theme);
+      console.log('✅ [EditorLayout] Theme applied to document');
+    }
+  }, [theme]);
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
@@ -127,11 +192,11 @@ export function EditorLayout({
         const newBlocks = [...blocks];
         newBlocks.splice(overIndex + 1, 0, newBlock);
         setBlocks(newBlocks);
-        saveToDatabase(newBlocks, theme);
+        saveToDatabase(newBlocks);
       } else {
         const newBlocks = [...blocks, newBlock];
         setBlocks(newBlocks);
-        saveToDatabase(newBlocks, theme);
+        saveToDatabase(newBlocks);
       }
       return;
     }
@@ -144,7 +209,7 @@ export function EditorLayout({
         const newBlocks = arrayMove(prev, oldIndex, newIndex);
         
         // Auto-save after reordering
-        saveToDatabase(newBlocks, theme);
+        saveToDatabase(newBlocks);
         return newBlocks;
       });
     }
@@ -155,13 +220,13 @@ export function EditorLayout({
       block.id === blockId ? { ...block, ...updates } : block
     );
     setBlocks(updatedBlocks);
-    saveToDatabase(updatedBlocks, theme);
+    saveToDatabase(updatedBlocks);
   };
 
   const handleBlockDelete = (blockId: string) => {
     const updatedBlocks = blocks.filter(block => block.id !== blockId);
     setBlocks(updatedBlocks);
-    saveToDatabase(updatedBlocks, theme);
+    saveToDatabase(updatedBlocks);
     
     // Clear selection if deleted block was selected
     if (selectedBlock?.id === blockId) {
@@ -173,9 +238,11 @@ export function EditorLayout({
     setSelectedBlock(block);
   };
 
-  const saveToDatabase = async (blocksToSave: ParsedBlock[], themeToSave: ParsedTheme) => {
+  const saveToDatabase = async (blocksToSave: ParsedBlock[]) => {
     try {
-      // Delete existing blocks
+      console.log('💾 [EditorLayout] Saving', blocksToSave.length, 'blocks to database');
+
+      // Delete existing blocks for this page
       await supabase
         .from('content_blocks')
         .delete()
@@ -184,49 +251,44 @@ export function EditorLayout({
 
       // Insert new blocks
       if (blocksToSave.length > 0) {
-        const blocksToInsert = blocksToSave.map((block, index) => ({
-          project_id: projectId,
-          page_id: pageId,
-          block_id: block.id,
-          type: block.type,
-          content: typeof block.content === 'object' 
-            ? JSON.stringify(block.content) 
-            : block.content,
-          order_index: index,
-          styles: block.styles || null
-        }));
+        for (const block of blocksToSave) {
+          await supabase.from('content_blocks').upsert({
+            project_id: projectId,
+            page_id: pageId,
+            block_id: block.id,
+            type: block.type,
+            content: typeof block.content === 'string' ? block.content : JSON.stringify(block.content),
+            order_index: blocksToSave.indexOf(block),
+            styles: typeof block.styles === 'object' ? JSON.stringify(block.styles) : (block.styles || '{}'),
+          }, {
+            onConflict: 'project_id,page_id,block_id'
+          });
+        }
 
-        const { error } = await supabase
-          .from('content_blocks')
-          .insert(blocksToInsert);
-
-        if (error) throw error;
+        console.log('✅ [EditorLayout] Blocks saved successfully');
       }
 
-      // Update theme
-      await supabase
-        .from('onboarding_pages')
-        .upsert({
-          project_id: projectId,
-          page_id: pageId,
-          theme: themeToSave.html
-        });
-
-      // Call parent callback
-      onSave?.(blocksToSave, themeToSave);
-      
+      // Trigger callback if provided
+      if (onSave) {
+        onSave(blocksToSave, { html: '' }); // Legacy format for compatibility
+      }
     } catch (error) {
-      console.error('[EditorLayout] Save error:', error);
+      console.error('❌ [EditorLayout] Error in saveToDatabase:', error);
       toast.error('Failed to save changes');
     }
   };
 
+  // Get customization for a specific component type
+  const getCustomizationForType = (type: string): ComponentCustomization | undefined => {
+    return componentCustomizations.find(c => c.type === type);
+  };
+
   if (loading) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="flex-1 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-2 text-gray-600">Loading editor...</p>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+          <p className="text-gray-600">Loading editor...</p>
         </div>
       </div>
     );
@@ -239,101 +301,107 @@ export function EditorLayout({
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="h-full flex relative">
-        {/* Component Library - Fixed Left Sidebar */}
-        <div className="w-80 flex-shrink-0 bg-white border-r border-gray-200">
-          <ComponentLibrary className="h-full" />
+      <div className="flex-1 flex overflow-hidden bg-gray-50">
+        {/* Component Library - Left Sidebar */}
+        <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
+          <div className="p-4 border-b border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-900">Components</h3>
+            <p className="text-sm text-gray-500">Drag components to build your page</p>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            <ComponentLibrary />
+          </div>
         </div>
-        
-        {/* Device Preview - Center */}
-        <div className="flex-1 flex justify-center items-center p-4 bg-gray-100 min-w-0 relative max-w-[calc(100vw-640px)]">
-          {previewMode === 'mobile' ? (
-            // iPhone Frame
-            <div className="relative z-10">
-              <div className="w-[300px] h-[600px] bg-black rounded-[50px] p-[6px] shadow-2xl">
-                <div className="w-full h-full bg-gray-900 rounded-[44px] p-[3px]">
-                  <div className="w-full h-full bg-white rounded-[41px] overflow-hidden relative">
-                    {/* iPhone Notch */}
-                    <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-[120px] h-[25px] bg-black rounded-b-[12px] z-20"></div>
-                    {/* iPhone Home Indicator */}
-                    <div className="absolute bottom-[6px] left-1/2 transform -translate-x-1/2 w-[100px] h-[4px] bg-black rounded-[2px] opacity-60 z-20"></div>
+
+        {/* Main Editor Area */}
+        <div className="flex-1 flex flex-col">
+          {/* Device Preview */}
+          <div className="flex-1 flex items-center justify-center p-8 overflow-auto">
+            <div className="relative">
+              {previewMode === 'mobile' ? (
+                // iPhone Frame
+                <div className="relative bg-black rounded-[3rem] p-2 shadow-2xl">
+                  <div className="bg-white rounded-[2.5rem] overflow-hidden" style={{ width: '375px', height: '667px' }}>
+                    {/* Status Bar */}
+                    <div className="bg-black text-white text-xs px-6 py-2 flex justify-between items-center">
+                      <span>9:41</span>
+                      <div className="flex items-center space-x-1">
+                        <Smartphone className="w-3 h-3" />
+                      </div>
+                    </div>
                     
-                    {/* Canvas Content Container - Isolated theme scope */}
-                    <div className="w-full h-full overflow-y-auto scrollbar-hide relative">
+                    {/* Canvas Drop Zone */}
+                    <div className="h-full bg-white overflow-auto">
                       <CanvasDropZone
                         blocks={blocks}
                         theme={theme}
+                        componentCustomizations={componentCustomizations}
                         onBlockUpdate={handleBlockUpdate}
                         onBlockDelete={handleBlockDelete}
                         onBlockSelect={handleBlockSelect}
                         selectedBlockId={selectedBlock?.id}
                         activeId={activeId}
-                        className="min-h-full"
+                        className="min-h-full p-4"
                       />
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          ) : (
-            // MacBook Frame - Responsive positioning and z-index
-            <div className="relative z-10">
-              <div className="w-[500px] h-[350px] bg-gray-200 rounded-[6px] p-[12px] shadow-2xl">
-                <div className="w-full h-full bg-black rounded-[3px] p-[2px]">
-                  <div className="w-full h-full bg-gray-900 rounded-[1px] p-[15px]">
-                    <div className="w-full h-full bg-white rounded-[3px] overflow-hidden">
-                      {/* MacBook Menu Bar */}
-                      <div className="h-[24px] bg-gray-100 border-b flex items-center px-3 flex-shrink-0">
-                        <div className="flex gap-1.5">
-                          <div className="w-2.5 h-2.5 bg-red-500 rounded-full"></div>
-                          <div className="w-2.5 h-2.5 bg-yellow-500 rounded-full"></div>
-                          <div className="w-2.5 h-2.5 bg-green-500 rounded-full"></div>
-                        </div>
-                        <div className="flex-1 text-center text-xs text-gray-600">
-                          {pageTitle} - {projectName}
-                        </div>
+              ) : (
+                // MacBook Frame
+                <div className="relative">
+                  <div className="bg-gray-800 rounded-t-xl p-3">
+                    <div className="flex items-center space-x-2 mb-3">
+                      <div className="flex space-x-2">
+                        <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                        <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                        <div className="w-3 h-3 bg-green-500 rounded-full"></div>
                       </div>
-                      
-                      {/* Canvas Content Container - Isolated theme scope */}
-                      <div className="w-full h-[calc(100%-24px)] overflow-y-auto relative">
-                        <CanvasDropZone
-                          blocks={blocks}
-                          theme={theme}
-                          onBlockUpdate={handleBlockUpdate}
-                          onBlockDelete={handleBlockDelete}
-                          onBlockSelect={handleBlockSelect}
-                          selectedBlockId={selectedBlock?.id}
-                          activeId={activeId}
-                          className="min-h-full"
-                        />
+                      <div className="flex-1 bg-gray-700 rounded px-3 py-1 text-gray-300 text-xs flex items-center">
+                        <Monitor className="w-3 h-3 mr-2" />
+                        {projectName} - {pageTitle}
                       </div>
                     </div>
                   </div>
+                  <div className="bg-white shadow-2xl" style={{ width: '1024px', height: '600px' }}>
+                    <CanvasDropZone
+                      blocks={blocks}
+                      theme={theme}
+                      componentCustomizations={componentCustomizations}
+                      onBlockUpdate={handleBlockUpdate}
+                      onBlockDelete={handleBlockDelete}
+                      onBlockSelect={handleBlockSelect}
+                      selectedBlockId={selectedBlock?.id}
+                      activeId={activeId}
+                      className="h-full overflow-auto p-8"
+                    />
+                  </div>
                 </div>
-              </div>
-            </div>
-          )}
-        </div>
-        
-        {/* Component Properties - Fixed Right Sidebar */}
-        <div className="w-80 flex-shrink-0 bg-white border-l border-gray-200">
-          <ComponentProperties
-            selectedBlock={selectedBlock}
-            onBlockUpdate={handleBlockUpdate}
-            onClose={() => setSelectedBlock(null)}
-          />
-        </div>
-      </div>
-
-      {/* Drag Overlay - Proper z-index management */}
-      <DragOverlay dropAnimation={null}>
-        {activeId ? (
-          <div className="bg-white border-2 border-blue-400 rounded-lg p-3 shadow-xl opacity-90 transform rotate-2 z-50">
-            <div className="text-sm font-medium text-blue-600">
-              Drop into canvas
+              )}
             </div>
           </div>
-        ) : null}
+        </div>
+
+                 {/* Properties Panel - Right Sidebar */}
+         {selectedBlock && (
+           <div className="w-80 bg-white border-l border-gray-200">
+             <ComponentProperties
+               selectedBlock={selectedBlock}
+               onBlockUpdate={handleBlockUpdate}
+               onClose={() => setSelectedBlock(null)}
+             />
+           </div>
+         )}
+      </div>
+
+      {/* Drag Overlay */}
+      <DragOverlay>
+        {activeId && (
+          <div className="bg-white border border-gray-300 rounded-lg p-4 shadow-lg opacity-90">
+            <p className="text-sm font-medium text-gray-900">
+              {activeId.toString()}
+            </p>
+          </div>
+        )}
       </DragOverlay>
     </DndContext>
   );

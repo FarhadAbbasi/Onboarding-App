@@ -1,357 +1,550 @@
-import React, { useState } from 'react'
-import { Plus, GripVertical, Edit, Trash2, Type, Zap, MessageSquare, Users } from 'lucide-react'
-import {
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  closestCenter,
-  useDroppable,
-  useDraggable,
-} from '@dnd-kit/core'
-import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-  arrayMove,
-} from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core'
-import type { Database } from '../../lib/supabase'
+import React, { useState, useEffect } from 'react'
+import { ArrowLeft, ArrowRight, Plus, Edit2, Trash2, Monitor, Smartphone, Save, ChevronLeft, ChevronRight, Wand2, FileText } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { supabase } from '../../lib/supabase'
+import { EditorLayout } from '../flow/editor/EditorLayout'
+import { LoadingSpinner } from '../ui/LoadingSpinner'
+import { generatePageContent } from '../../lib/openai'
+import type { ParsedBlock, ParsedTheme } from '../flow/editor/AIHtmlParser'
 
-type ContentBlock = Database['public']['Tables']['content_blocks']['Row']
+interface Page {
+  id: string
+  project_id: string
+  page_id: string
+  title: string
+  purpose: string
+  html_content?: string
+  order_index: number
+}
 
 interface BlockEditorProps {
-  blocks: ContentBlock[]
-  onBlockUpdate: (blockId: string, updates: Partial<ContentBlock>) => void
-  onBlockReorder: (newBlocks: ContentBlock[]) => void
-  onAddBlock: (type: ContentBlock['type'], content: string) => void
-  onDeleteBlock: (blockId: string) => void
+  projectId: string
+  projectName: string
 }
 
-function DragHandle() {
-  return (
-    <div className="cursor-grab hover:text-gray-600 p-1 touch-none">
-      <GripVertical size={16} />
-    </div>
-  )
-}
+export function BlockEditor({ projectId, projectName }: BlockEditorProps) {
+  const [pages, setPages] = useState<Page[]>([])
+  const [currentPageIndex, setCurrentPageIndex] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [previewMode, setPreviewMode] = useState<'mobile' | 'desktop'>('mobile')
+  const [showAddPageModal, setShowAddPageModal] = useState(false)
+  const [newPageTitle, setNewPageTitle] = useState('')
+  const [newPagePurpose, setNewPagePurpose] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [showAIModal, setShowAIModal] = useState(false)
+  const [openaiKey, setOpenaiKey] = useState('')
 
-interface SortableBlockProps {
-  block: ContentBlock
-  onUpdate: (updates: Partial<ContentBlock>) => void
-  onDelete: () => void
-}
+  // Load pages from database
+  useEffect(() => {
+    const loadPages = async () => {
+      setLoading(true)
+      try {
+        const { data, error } = await supabase
+          .from('onboarding_pages')
+          .select('*')
+          .eq('project_id', projectId)
+          .order('order_index', { ascending: true })
 
-function SortableBlock({ block, onUpdate, onDelete }: SortableBlockProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({
-    id: block.id,
-  })
+        if (error) throw error
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  }
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`${isDragging ? 'opacity-50' : ''}`}
-    >
-      <EditableBlock
-        block={block}
-        onUpdate={onUpdate}
-        onDelete={onDelete}
-        dragHandleProps={{ ...attributes, ...listeners }}
-      />
-    </div>
-  )
-}
-
-interface EditableBlockProps {
-  block: ContentBlock
-  onUpdate: (updates: Partial<ContentBlock>) => void
-  onDelete: () => void
-  dragHandleProps?: any
-}
-
-function EditableBlock({ block, onUpdate, onDelete, dragHandleProps }: EditableBlockProps) {
-  const [isEditing, setIsEditing] = useState(false)
-  const [content, setContent] = useState(block.content)
-
-  const handleSave = () => {
-    onUpdate({ content })
-    setIsEditing(false)
-  }
-
-  const handleCancel = () => {
-    setContent(block.content)
-    setIsEditing(false)
-  }
-
-  const getBlockIcon = (type: ContentBlock['type']) => {
-    switch (type) {
-      case 'headline': return <Type size={16} />
-      case 'subheadline': return <Type size={16} />
-      case 'feature': return <Zap size={16} />
-      case 'cta': return <MessageSquare size={16} />
-      case 'testimonial': return <Users size={16} />
-      default: return <Type size={16} />
+        if (data && data.length > 0) {
+          setPages(data)
+        } else {
+          // Create a default page if none exist
+          await createDefaultPage()
+        }
+      } catch (error) {
+        console.error('Error loading pages:', error)
+        toast.error('Failed to load pages')
+      } finally {
+        setLoading(false)
+      }
     }
-  }
 
-  const getBlockLabel = (type: ContentBlock['type']) => {
-    switch (type) {
-      case 'headline': return 'Headline'
-      case 'subheadline': return 'Subheadline'
-      case 'feature': return 'Feature'
-      case 'cta': return 'Call to Action'
-      case 'testimonial': return 'Testimonial'
-      default: return 'Content'
+    if (projectId) {
+      loadPages()
     }
-  }
+  }, [projectId])
 
-  const parseTestimonial = (content: string) => {
+  const createDefaultPage = async () => {
+    const defaultPage = {
+      project_id: projectId,
+      page_id: 'welcome',
+      title: 'Welcome',
+      purpose: 'Introduce users to your app',
+      html_content: '',
+      order_index: 0
+    }
+
     try {
-      return JSON.parse(content)
-    } catch {
-      return { text: content, author: '', role: '', company: '' }
+      const { data, error } = await supabase
+        .from('onboarding_pages')
+        .insert(defaultPage)
+        .select()
+        .single()
+
+      if (error) throw error
+      if (data) {
+        setPages([data])
+      }
+    } catch (error) {
+      console.error('Error creating default page:', error)
+      toast.error('Failed to create default page')
     }
   }
 
-  const renderContent = () => {
-    if (block.type === 'testimonial') {
-      const testimonial = parseTestimonial(block.content)
-      return `"${testimonial.text}" - ${testimonial.author}, ${testimonial.role} at ${testimonial.company}`
+  const handleAddPage = async () => {
+    if (!newPageTitle.trim() || !newPagePurpose.trim()) {
+      toast.error('Please fill in both title and purpose')
+      return
     }
-    return block.content
+
+    setSaving(true)
+    try {
+      const pageId = newPageTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+      const newPage = {
+        project_id: projectId,
+        page_id: pageId,
+        title: newPageTitle,
+        purpose: newPagePurpose,
+        html_content: '',
+        order_index: pages.length
+      }
+
+      // Use upsert to avoid duplicates
+      const { data, error } = await supabase
+        .from('onboarding_pages')
+        .upsert(newPage, { 
+          onConflict: 'project_id,page_id',
+          ignoreDuplicates: false 
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+      if (data) {
+        // Check if page already exists in local state
+        const existingPageIndex = pages.findIndex(p => p.page_id === pageId)
+        if (existingPageIndex >= 0) {
+          // Update existing page
+          const updatedPages = [...pages]
+          updatedPages[existingPageIndex] = data
+          setPages(updatedPages)
+        } else {
+          // Add new page
+          setPages([...pages, data])
+        }
+        setNewPageTitle('')
+        setNewPagePurpose('')
+        setShowAddPageModal(false)
+        toast.success('Page saved successfully!')
+      }
+    } catch (error) {
+      console.error('Error adding page:', error)
+      toast.error('Failed to save page')
+    } finally {
+      setSaving(false)
+    }
   }
 
-  return (
-    <div className="border border-gray-200 rounded-lg p-4 bg-white">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <div {...dragHandleProps}>
-            <DragHandle />
-          </div>
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            {getBlockIcon(block.type)}
-            <span className="font-medium">{getBlockLabel(block.type)}</span>
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setIsEditing(true)}
-            className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
-          >
-            <Edit size={16} />
-          </button>
-          <button
-            onClick={onDelete}
-            className="p-1 text-gray-400 hover:text-red-600 transition-colors"
-          >
-            <Trash2 size={16} />
-          </button>
+  const handleDeletePage = async (pageIndex: number) => {
+    if (pages.length <= 1) {
+      toast.error('Cannot delete the last page')
+      return
+    }
+
+    if (!confirm('Are you sure you want to delete this page? This will also delete all its content blocks.')) {
+      return
+    }
+
+    setSaving(true)
+    try {
+      const pageToDelete = pages[pageIndex]
+      
+      // Delete content blocks first
+      await supabase
+        .from('content_blocks')
+        .delete()
+        .eq('project_id', projectId)
+        .eq('page_id', pageToDelete.page_id)
+
+      // Delete the page
+      const { error } = await supabase
+        .from('onboarding_pages')
+        .delete()
+        .eq('id', pageToDelete.id)
+
+      if (error) throw error
+
+      const updatedPages = pages.filter((_, index) => index !== pageIndex)
+      setPages(updatedPages)
+      
+      // Adjust current page index if necessary
+      if (currentPageIndex >= updatedPages.length) {
+        setCurrentPageIndex(Math.max(0, updatedPages.length - 1))
+      } else if (currentPageIndex > pageIndex) {
+        setCurrentPageIndex(currentPageIndex - 1)
+      }
+
+      toast.success('Page deleted successfully!')
+    } catch (error) {
+      console.error('Error deleting page:', error)
+      toast.error('Failed to delete page')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleGenerateContent = async () => {
+    if (!openaiKey.trim()) {
+      toast.error('Please enter your OpenAI API key')
+      return
+    }
+
+    const currentPage = pages[currentPageIndex]
+    if (!currentPage) return
+
+    setIsGenerating(true)
+    try {
+      const response = await generatePageContent(
+        openaiKey,
+        {
+          id: currentPage.page_id,
+          title: currentPage.title,
+          purpose: currentPage.purpose,
+          order_index: currentPage.order_index
+        },
+        projectName,
+        'mobile app', // Default category
+        'friendly', // Default tone
+        '', // No app URL for now
+        { primary: 'indigo', secondary: 'blue', accent: 'green', background: 'white', text: 'gray' }
+      )
+
+      if (response.blocks && response.blocks.length > 0) {
+        // Save the blocks to the database
+        await supabase
+          .from('content_blocks')
+          .delete()
+          .eq('project_id', projectId)
+          .eq('page_id', currentPage.page_id)
+
+        for (let i = 0; i < response.blocks.length; i++) {
+          const block = response.blocks[i]
+          await supabase
+            .from('content_blocks')
+            .insert({
+              project_id: projectId,
+              page_id: currentPage.page_id,
+              block_id: `block-${Date.now()}-${i}`,
+              type: block.type,
+              content: JSON.stringify(block.content),
+              order_index: i
+            })
+        }
+
+                 // Update the theme if available
+         if (response.theme) {
+           await supabase
+             .from('onboarding_pages')
+             .update({
+               theme: response.theme.background || response.theme.custom_css || ''
+             })
+             .eq('id', currentPage.id)
+         }
+
+        toast.success('Content generated successfully!')
+        setShowAIModal(false)
+      }
+    } catch (error) {
+      console.error('Error generating content:', error)
+      toast.error('Failed to generate content. Please check your API key.')
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
+  const currentPage = pages[currentPageIndex]
+
+  if (loading) {
+    return (
+      <div className="h-96 flex items-center justify-center">
+        <div className="text-center">
+          <LoadingSpinner size="lg" />
+          <p className="mt-4 text-gray-600">Loading pages...</p>
         </div>
       </div>
+    )
+  }
 
-      {isEditing ? (
-        <div className="space-y-3">
-          {block.type === 'testimonial' ? (
-            <TestimonialEditor
-              value={parseTestimonial(block.content)}
-              onChange={(testimonial) => setContent(JSON.stringify(testimonial))}
-            />
-          ) : (
-            <textarea
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-md resize-none"
-              rows={block.type === 'feature' ? 2 : 3}
-              placeholder={`Enter ${getBlockLabel(block.type).toLowerCase()} content...`}
-            />
-          )}
-          
-          <div className="flex gap-2">
-            <button onClick={handleSave} className="btn-primary text-sm">
-              Save
+  return (
+    <div className="h-full flex flex-col bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">{projectName}</h2>
+            <p className="text-sm text-gray-600">Multi-page onboarding editor</p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Preview Mode Toggle */}
+            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => setPreviewMode('mobile')}
+                className={`p-2 rounded transition-colors ${
+                  previewMode === 'mobile' 
+                    ? 'bg-white text-blue-600 shadow-sm' 
+                    : 'text-gray-600 hover:text-blue-600'
+                }`}
+              >
+                <Smartphone size={16} />
+              </button>
+              <button
+                onClick={() => setPreviewMode('desktop')}
+                className={`p-2 rounded transition-colors ${
+                  previewMode === 'desktop' 
+                    ? 'bg-white text-blue-600 shadow-sm' 
+                    : 'text-gray-600 hover:text-blue-600'
+                }`}
+              >
+                <Monitor size={16} />
+              </button>
+            </div>
+
+            {/* AI Generate Button */}
+            <button
+              onClick={() => setShowAIModal(true)}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <Wand2 size={16} />
+              Generate with AI
             </button>
-            <button onClick={handleCancel} className="btn-secondary text-sm">
-              Cancel
+
+            {/* Add Page Button */}
+            <button
+              onClick={() => setShowAddPageModal(true)}
+              className="btn-primary flex items-center gap-2"
+            >
+              <Plus size={16} />
+              Add Page
             </button>
           </div>
         </div>
-      ) : (
-        <div className="text-gray-700 cursor-pointer" onClick={() => setIsEditing(true)}>
-          {renderContent() || 'Click to edit...'}
+
+        {/* Page Navigation */}
+        {pages.length > 0 && (
+          <div className="mt-4 flex items-center justify-between">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <button
+                onClick={() => setCurrentPageIndex(Math.max(0, currentPageIndex - 1))}
+                disabled={currentPageIndex === 0}
+                className="btn-secondary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+              >
+                <ChevronLeft size={16} />
+                <span>Previous</span>
+              </button>
+
+              <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide min-w-0 flex-1">
+                {pages.map((page, index) => (
+                  <button
+                    key={page.id}
+                    onClick={() => setCurrentPageIndex(index)}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
+                      index === currentPageIndex
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {page.title}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={() => setCurrentPageIndex(Math.min(pages.length - 1, currentPageIndex + 1))}
+                disabled={currentPageIndex === pages.length - 1}
+                className="btn-secondary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+              >
+                <span>Next</span>
+                <ChevronRight size={16} />
+              </button>
+            </div>
+
+            {currentPage && (
+              <div className="flex items-center gap-2 flex-shrink-0 ml-4">
+                <button
+                  onClick={() => handleDeletePage(currentPageIndex)}
+                  className="text-red-600 hover:text-red-700 p-2"
+                  title="Delete page"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Current Page Info */}
+        {currentPage && (
+          <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-medium text-blue-900">{currentPage.title}</h3>
+                <p className="text-sm text-blue-700">{currentPage.purpose}</p>
+              </div>
+              <div className="text-sm text-blue-600">
+                Page {currentPageIndex + 1} of {pages.length}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Main Editor Area */}
+      <div className="flex-1 p-6">
+        {currentPage ? (
+          <div className="h-full bg-white rounded-lg border border-gray-200">
+            <EditorLayout
+              projectId={projectId}
+              pageId={currentPage.page_id}
+              projectName={projectName}
+              pageTitle={currentPage.title}
+              previewMode={previewMode}
+              onSave={(blocks: ParsedBlock[], theme: ParsedTheme) => {
+                // Optional: Add any additional save logic here
+                console.log('Page saved:', currentPage.page_id, blocks.length, 'blocks')
+              }}
+            />
+          </div>
+        ) : (
+          <div className="h-full flex items-center justify-center">
+            <div className="text-center">
+              <FileText size={48} className="mx-auto text-gray-400 mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No pages found</h3>
+              <p className="text-gray-600 mb-4">Create your first page to get started</p>
+              <button
+                onClick={() => setShowAddPageModal(true)}
+                className="btn-primary flex items-center gap-2 mx-auto"
+              >
+                <Plus size={16} />
+                Add Page
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Add Page Modal */}
+      {showAddPageModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">Add New Page</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Page Title
+                </label>
+                <input
+                  type="text"
+                  value={newPageTitle}
+                  onChange={(e) => setNewPageTitle(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  placeholder="e.g., Welcome, Features, Sign Up"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Purpose
+                </label>
+                <textarea
+                  value={newPagePurpose}
+                  onChange={(e) => setNewPagePurpose(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md resize-none"
+                  rows={3}
+                  placeholder="Describe what this page should accomplish..."
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowAddPageModal(false)}
+                className="flex-1 btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddPage}
+                disabled={saving}
+                className="flex-1 btn-primary flex items-center justify-center gap-2"
+              >
+                {saving ? <LoadingSpinner size="sm" /> : <Plus size={16} />}
+                Add Page
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Generation Modal */}
+      {showAIModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">Generate with AI</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  OpenAI API Key
+                </label>
+                <input
+                  type="password"
+                  value={openaiKey}
+                  onChange={(e) => setOpenaiKey(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  placeholder="sk-..."
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Your API key is only used for this session and not stored
+                </p>
+              </div>
+
+              {currentPage && (
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-600">
+                    Generating content for: <strong>{currentPage.title}</strong>
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {currentPage.purpose}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowAIModal(false)}
+                className="flex-1 btn-secondary"
+                disabled={isGenerating}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleGenerateContent}
+                disabled={isGenerating || !openaiKey.trim()}
+                className="flex-1 btn-primary flex items-center justify-center gap-2"
+              >
+                {isGenerating ? <LoadingSpinner size="sm" /> : <Wand2 size={16} />}
+                {isGenerating ? 'Generating...' : 'Generate'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
   )
 }
-
-interface TestimonialEditorProps {
-  value: any
-  onChange: (testimonial: any) => void
-}
-
-function TestimonialEditor({ value, onChange }: TestimonialEditorProps) {
-  return (
-    <div className="space-y-2">
-      <textarea
-        value={value.text || ''}
-        onChange={(e) => onChange({ ...value, text: e.target.value })}
-        className="w-full p-2 border border-gray-300 rounded-md resize-none"
-        rows={3}
-        placeholder="Testimonial text..."
-      />
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-        <input
-          type="text"
-          value={value.author || ''}
-          onChange={(e) => onChange({ ...value, author: e.target.value })}
-          className="input-field"
-          placeholder="Author name"
-        />
-        <input
-          type="text"
-          value={value.role || ''}
-          onChange={(e) => onChange({ ...value, role: e.target.value })}
-          className="input-field"
-          placeholder="Role"
-        />
-        <input
-          type="text"
-          value={value.company || ''}
-          onChange={(e) => onChange({ ...value, company: e.target.value })}
-          className="input-field"
-          placeholder="Company"
-        />
-      </div>
-    </div>
-  )
-}
-
-const COMPONENT_LIBRARY = [
-  { id: 'headline', type: 'headline', label: 'Headline' },
-  { id: 'subheadline', type: 'subheadline', label: 'Subheadline' },
-  { id: 'feature', type: 'feature', label: 'Feature' },
-  { id: 'cta', type: 'cta', label: 'Call to Action' },
-  { id: 'testimonial', type: 'testimonial', label: 'Testimonial' },
-  // { id: 'permissions', type: 'permissions', label: 'Permissions' },
-  // { id: 'profile-setup', type: 'profile-setup', label: 'Profile Setup' },
-];
-
-function DraggableLibraryItem({ item }: { item: { id: string; type: string; label: string } }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: item.id, data: { type: item.type, label: item.label } });
-
-  // Realistic preview for each type
-  let preview: React.ReactNode = null;
-  switch (item.type) {
-    case 'headline':
-      preview = <h1 className="text-xl font-bold text-gray-900">Headline Example</h1>;
-      break;
-    case 'subheadline':
-      preview = <h2 className="text-base text-gray-600">Subheadline Example</h2>;
-      break;
-    case 'feature':
-      preview = <div className="bg-blue-50 rounded p-2 text-blue-800 font-medium">Feature Example</div>;
-      break;
-    case 'cta':
-      preview = <button className="bg-blue-600 text-white px-4 py-2 rounded shadow">Call to Action</button>;
-      break;
-    case 'testimonial':
-      preview = <blockquote className="italic text-gray-700 border-l-4 border-blue-400 pl-2">“Testimonial Example”</blockquote>;
-      break;
-    default:
-      preview = <div>{item.label}</div>;
-  }
-
-  return (
-    <div
-      ref={setNodeRef}
-      {...listeners}
-      {...attributes}
-      className={`group bg-white border border-gray-200 rounded-lg p-4 mb-4 shadow-sm cursor-grab hover:shadow-md transition-all flex items-center gap-4 ${isDragging ? 'opacity-50 ring-2 ring-blue-400' : ''}`}
-      style={{ opacity: isDragging ? 0.5 : 1 }}
-      title={`Drag to add a ${item.label}`}
-    >
-      <div className="flex-1">{preview}</div>
-      <span className="text-xs text-gray-400 group-hover:text-blue-500 transition">Drag</span>
-          </div>
-  );
-}
-
-function BlockEditorSidebar() {
-  return (
-    <aside className="w-full h-full bg-gradient-to-b from-gray-50 to-white p-8 flex flex-col justify-start overflow-y-auto">
-      <h2 className="text-xl font-bold mb-6 text-gray-900">Component Library</h2>
-      <div className="flex flex-col gap-4">
-        {COMPONENT_LIBRARY.map((item) => (
-          <DraggableLibraryItem key={item.id} item={item} />
-              ))}
-      </div>
-      <div className="mt-8 text-xs text-gray-400 text-center">Drag a component to the preview panel →</div>
-    </aside>
-  );
-}
-
-function renderBlockPreview(block: ContentBlock) {
-  if (!block) return null;
-
-  switch (block.type) {
-    case 'headline':
-      return (
-        <h1 className="text-3xl font-bold my-2">{block.content || 'Welcome to Your App!'}</h1>
-      );
-    case 'subheadline':
-      return (
-        <h2 className="text-xl text-gray-600 my-2">{block.content || 'Start building your onboarding experience.'}</h2>
-      );
-    case 'feature':
-      return (
-        <section className="bg-white border rounded-lg p-6 my-2">
-          <h2 className="text-xl font-bold mb-4">Feature</h2>
-          <ul className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <li className="p-3 bg-blue-100 rounded">Feature One</li>
-            <li className="p-3 bg-blue-100 rounded">Feature Two</li>
-          </ul>
-        </section>
-      );
-    case 'cta':
-      return (
-        <section className="bg-blue-600 text-white rounded-lg p-6 text-center my-2">
-          <h2 className="text-2xl font-bold mb-2">{block.content || 'Ready to get started?'}</h2>
-          <button className="btn-secondary">Join Now</button>
-        </section>
-      );
-    case 'testimonial':
-      return (
-        <blockquote className="bg-gray-50 border-l-4 border-blue-400 p-4 my-2 rounded">
-          <p className="italic mb-2">{block.content || '“This app made onboarding a breeze!”'}</p>
-          <footer className="text-sm text-gray-600">- Happy User, CEO</footer>
-        </blockquote>
-      );
-    default:
-      return <div className="my-2">{block.content}</div>;
-  }
-}
-
-export function BlockEditor() {
-  // Only render the sidebar (no drop area or preview here)
-  return (
-    <div className="h-full w-full flex flex-col">
-      <BlockEditorSidebar />
-    </div>
-  );
-} 

@@ -379,29 +379,29 @@ export const Button: React.FC<ButtonProps> = ({
   const textSizeClasses = getSizeClasses(size, 'text');
   
   return (
-    <button
-      {...props}
+  <button
+    {...props}
       disabled={disabled || isLoading}
-      className={cn(
+    className={cn(
         baseClasses,
         variantClasses,
         colorClasses,
         sizeClasses,
         textSizeClasses,
-        className,
-      )}
-    >
+      className,
+    )}
+  >
       {isLoading ? (
         <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent mr-2" />
       ) : leftIcon ? (
         <span className={cn("mr-2", getSizeClasses(size, 'icon'))}>{leftIcon}</span>
       ) : null}
-      {children}
+    {children}
       {rightIcon && !isLoading && (
         <span className={cn("ml-2", getSizeClasses(size, 'icon'))}>{rightIcon}</span>
       )}
-    </button>
-  );
+  </button>
+);
 };
 
 // 2. Enhanced Card -----------------------------------------------------------
@@ -438,11 +438,11 @@ export const Card: React.FC<CardProps> = ({
   const colorClasses = colorScheme ? `border-${colorScheme}-200 bg-${colorScheme}-50/30` : "";
   
   return (
-    <div
-      {...props}
+  <div
+    {...props}
       className={cn(baseClasses, variantClasses, paddingClasses, colorClasses, className)}
-    />
-  );
+  />
+);
 };
 
 export const CardHeader: React.FC<PrimitiveProps<"div">> = ({ className, ...props }) => (
@@ -491,8 +491,8 @@ export const Input: React.FC<InputProps> = ({
     : `border-gray-300 focus:border-${colorScheme}-500 focus:ring-2 focus:ring-${colorScheme}-500`;
   
   return (
-    <input
-      {...props}
+  <input
+    {...props}
       className={cn(baseClasses, variantClasses, sizeClasses, colorClasses, className)}
     />
   );
@@ -525,12 +525,12 @@ export const Alert: React.FC<AlertProps> = ({
   }[variant];
   
   return (
-    <div
-      {...props}
-      role="alert"
+  <div
+    {...props}
+    role="alert"
       className={cn(baseClasses, variantClasses, className)}
-    />
-  );
+  />
+);
 };
 
 export const AlertTitle: React.FC<PrimitiveProps<"span">> = ({ className, ...props }) => (
@@ -650,9 +650,9 @@ export const Subheadline: React.FC<SubheadlineProps> = ({
   
   return (
     <p className={cn("mt-2", sizeClasses, alignClasses, colorClasses, className)}>
-      {children}
-    </p>
-  );
+    {children}
+  </p>
+);
 };
 
 // 3️⃣ Enhanced CTA Section --------------------------------------------------
@@ -713,7 +713,7 @@ export const CTA: React.FC<CTAProps> = ({
           )}
         >
           {button_text}
-        </Button>
+  </Button>
       </div>
     </div>
   );
@@ -850,17 +850,17 @@ export const FeatureCard: React.FC<FeatureCardProps> = ({
       variant={variant}
       className={cn("flex h-full flex-col items-center text-center", hoverClasses, className)}
     >
-      <CardHeader>
+    <CardHeader>
         <div className={cn(iconClasses, iconSizeClasses)}>
-          {icon}
-        </div>
-      </CardHeader>
-      <CardContent className="pt-0">
-        <h3 className="mb-1 text-lg font-semibold text-gray-900">{title}</h3>
-        <p className="text-sm leading-relaxed text-gray-600">{description}</p>
-      </CardContent>
-    </Card>
-  );
+        {icon}
+      </div>
+    </CardHeader>
+    <CardContent className="pt-0">
+      <h3 className="mb-1 text-lg font-semibold text-gray-900">{title}</h3>
+      <p className="text-sm leading-relaxed text-gray-600">{description}</p>
+    </CardContent>
+  </Card>
+);
 };
 
 // 5️⃣ Enhanced Text Input ----------------------------------------------------
@@ -886,20 +886,20 @@ export const TextInput: React.FC<TextInputProps> = ({
   const inputId = props.id || props.name || 'input';
   
   return (
-    <div className="w-full">
-      {label && (
+  <div className="w-full">
+    {label && (
         <label htmlFor={inputId} className="mb-1 block text-sm font-medium text-gray-700">
           {label} {required && <span className="text-red-500">*</span>}
-        </label>
+      </label>
       )}
       <div className="relative">
         {leftIcon && (
           <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
             {leftIcon}
           </div>
-        )}
-        <Input
-          {...props}
+    )}
+    <Input
+      {...props}
           id={inputId}
           size={size}
           error={error}
@@ -920,8 +920,8 @@ export const TextInput: React.FC<TextInputProps> = ({
           {message}
         </p>
       )}
-    </div>
-  );
+  </div>
+);
 };
 
 // 6️⃣ Enhanced Styled Link ---------------------------------------------------
@@ -949,13 +949,13 @@ export const StyledLink: React.FC<StyledLinkProps> = ({
   const underlineClasses = underline ? "underline-offset-4 hover:underline" : "";
   
   return (
-    <a
-      {...props}
+  <a
+    {...props}
       className={cn(baseClasses, colorClasses, variantClasses, underlineClasses, className)}
-    >
-      {children}
-    </a>
-  );
+  >
+    {children}
+  </a>
+);
 };
 
 // 7️⃣ Enhanced Alert Message -------------------------------------------------
@@ -993,8 +993,8 @@ export const AlertMessage: React.FC<AlertMessageProps> = ({
     <Alert variant={variant} colorScheme={colorScheme} className={className}>
       {iconElement}
       <div className="flex-1">
-        {title && <AlertTitle className="font-medium">{title}</AlertTitle>}
-        <AlertDescription>{children}</AlertDescription>
+    {title && <AlertTitle className="font-medium">{title}</AlertTitle>}
+    <AlertDescription>{children}</AlertDescription>
       </div>
       {closable && onClose && (
         <button 
@@ -1004,8 +1004,8 @@ export const AlertMessage: React.FC<AlertMessageProps> = ({
           ✕
         </button>
       )}
-    </Alert>
-  );
+  </Alert>
+);
 };
 
 // 8️⃣ Enhanced Testimonial ---------------------------------------------------
@@ -1037,16 +1037,16 @@ export const Testimonial: React.FC<TestimonialProps> = ({
           "{quote}"
         </blockquote>
         <Separator className="my-3" colorScheme={colorScheme} />
-        <figcaption className="flex items-center gap-3">
-          <img src={avatarUrl} alt={name} className="h-10 w-10 rounded-full object-cover" />
-          <div>
-            <div className="text-sm font-semibold text-gray-900">{name}</div>
-            {role && <div className="text-xs text-gray-500">{role}</div>}
-          </div>
-        </figcaption>
+    <figcaption className="flex items-center gap-3">
+      <img src={avatarUrl} alt={name} className="h-10 w-10 rounded-full object-cover" />
+      <div>
+        <div className="text-sm font-semibold text-gray-900">{name}</div>
+        {role && <div className="text-xs text-gray-500">{role}</div>}
+      </div>
+    </figcaption>
       </Card>
-    </figure>
-  );
+  </figure>
+);
 };
 
 // 9️⃣ Enhanced Footer --------------------------------------------------------
@@ -1073,26 +1073,26 @@ export const Footer: React.FC<FooterProps> = ({
 
   return (
     <footer className={cn("w-full border-t py-8", variantClasses, className)}>
-      <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-6 px-4 md:flex-row">
+    <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-6 px-4 md:flex-row">
         <span className="text-lg font-semibold">{brand}</span>
-        <nav className="flex flex-wrap gap-4 text-sm">
-          {links.map((l) => (
+      <nav className="flex flex-wrap gap-4 text-sm">
+        {links.map((l) => (
             <StyledLink 
               key={l.href} 
               href={l.href} 
               colorScheme={colorScheme}
               className="font-medium"
             >
-              {l.label}
-            </StyledLink>
-          ))}
-        </nav>
+            {l.label}
+          </StyledLink>
+        ))}
+      </nav>
         <p className="text-xs opacity-60">
           © {new Date().getFullYear()} {brand}. All rights reserved.
         </p>
-      </div>
-    </footer>
-  );
+    </div>
+  </footer>
+);
 };
 
 // Convenience collective export ----------------------------------------------

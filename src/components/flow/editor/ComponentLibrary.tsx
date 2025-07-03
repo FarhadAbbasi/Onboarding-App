@@ -378,8 +378,8 @@ export function ComponentLibrary({ className }: ComponentLibraryProps) {
         </div>
       </div>
       
-      {/* Components List */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Components List - Fixed height with scrolling */}
+      <div className="flex-1 overflow-y-auto scrollbar-hide" style={{ maxHeight: 'calc(100vh - 280px)' }}>
         {searchTerm ? (
           // Search Results
           <div className="p-3 space-y-2">

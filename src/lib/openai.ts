@@ -30,6 +30,13 @@ export async function generateFlowPlan(
   tone: 'professional' | 'friendly' | 'casual' | 'modern' | 'playful',
   notes?: string
 ): Promise<AIFlowPlanResponse> {
+  console.log('[generateFlowPlan] Starting with params:', { appName, category, tone })
+  
+  // Validate API key format
+  if (!apiKey || !apiKey.startsWith('sk-')) {
+    throw new Error('Invalid OpenAI API key format. API key should start with "sk-"')
+  }
+
   const openai = new OpenAI({
     apiKey,
     dangerouslyAllowBrowser: true
@@ -82,6 +89,8 @@ Make sure each page has a clear purpose and the flow feels natural for a ${categ
 `
 
   try {
+    console.log('[generateFlowPlan] Making OpenAI API call...')
+    
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
@@ -98,20 +107,81 @@ Make sure each page has a clear purpose and the flow feels natural for a ${categ
       max_tokens: 2000
     })
 
+    console.log('[generateFlowPlan] Got OpenAI response:', completion)
+
     const content = completion.choices[0]?.message?.content
     if (!content) {
-      throw new Error('No content generated')
+      throw new Error('No content generated from OpenAI')
     }
+
+    console.log('[generateFlowPlan] Raw content:', content)
 
     // Clean the response by removing markdown code blocks
     const cleanedContent = content.replace(/```json\s*|```\s*/g, '').trim()
+    console.log('[generateFlowPlan] Cleaned content:', cleanedContent)
+    
     const parsed = JSON.parse(cleanedContent)
-    return AIFlowPlanResponseSchema.parse(parsed)
+    console.log('[generateFlowPlan] Parsed JSON:', parsed)
+    
+    const validated = AIFlowPlanResponseSchema.parse(parsed)
+    console.log('[generateFlowPlan] Successfully validated response')
+    
+    return validated
   } catch (error) {
-    if (error instanceof Error && error.message.includes('JSON')) {
-      // Retry with stricter instruction
+    console.error('[generateFlowPlan] Detailed error:', error)
+    
+    // Convert unknown error to Error type
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    const errorName = error instanceof Error ? error.name : 'UnknownError'
+    
+    // Log specific error types
+    if (errorName === 'ZodError' && error instanceof Error && 'issues' in error) {
+      console.error('[generateFlowPlan] Schema validation error:', (error as any).issues)
+      throw new Error(`Invalid response format from AI: ${(error as any).issues.map((i: any) => i.message).join(', ')}`)
+    }
+    
+    if (errorMessage?.includes('API key')) {
+      throw new Error('Invalid OpenAI API key. Please check your API key is correct and has the necessary permissions.')
+    }
+    
+    if (errorMessage?.includes('model')) {
+      console.log('[generateFlowPlan] Trying fallback model gpt-4...')
+      try {
+        const fallbackCompletion = await openai.chat.completions.create({
+          model: 'gpt-4',
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an expert UX designer specializing in mobile app onboarding flows. Always respond with valid JSON only.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          temperature: 0.7,
+          max_tokens: 2000
+        })
+        
+        const fallbackContent = fallbackCompletion.choices[0]?.message?.content
+        if (!fallbackContent) {
+          throw new Error('No content generated from fallback model')
+        }
+        
+        const cleanedFallbackContent = fallbackContent.replace(/```json\s*|```\s*/g, '').trim()
+        const fallbackParsed = JSON.parse(cleanedFallbackContent)
+        return AIFlowPlanResponseSchema.parse(fallbackParsed)
+      } catch (fallbackError) {
+        console.error('[generateFlowPlan] Fallback model also failed:', fallbackError)
+        throw new Error(`Model access error. You may not have access to GPT-4 models. Original error: ${errorMessage}`)
+      }
+    }
+    
+    if (errorMessage?.includes('JSON')) {
+      console.log('[generateFlowPlan] JSON parsing error, trying retry with stricter instruction...')
+      try {
       const retryCompletion = await openai.chat.completions.create({
-        model: 'gpt-4o',
+          model: 'gpt-3.5-turbo',
         messages: [
           {
             role: 'system',
@@ -134,10 +204,24 @@ Make sure each page has a clear purpose and the flow feels natural for a ${categ
       const cleanedRetryContent = retryContent.replace(/```json\s*|```\s*/g, '').trim()
       const retryParsed = JSON.parse(cleanedRetryContent)
       return AIFlowPlanResponseSchema.parse(retryParsed)
+      } catch (retryError) {
+        console.error('[generateFlowPlan] Retry also failed:', retryError)
+        throw new Error(`JSON parsing failed even after retry. The AI might be having issues generating valid JSON. Try again in a few minutes.`)
+      }
     }
     
-    console.error('Flow plan generation error:', error)
-    throw new Error('Failed to generate flow plan. Please check your API key and try again.')
+    // Handle rate limiting
+    if (errorMessage?.includes('rate limit') || errorMessage?.includes('429')) {
+      throw new Error('OpenAI rate limit exceeded. Please wait a moment and try again.')
+    }
+    
+    // Handle network errors
+    if (errorMessage?.includes('network') || errorMessage?.includes('fetch')) {
+      throw new Error('Network error connecting to OpenAI. Please check your internet connection and try again.')
+    }
+    
+    // Generic error with more detail
+    throw new Error(`OpenAI API error: ${errorMessage || 'Unknown error occurred'}. Please check your API key and try again.`)
   }
 }
 
@@ -159,22 +243,22 @@ export async function generatePageContent(
   const prompt = `
 You are an expert onboarding designer creating beautiful mobile app pages using a component library.
 
-IMPORTANT: Generate ONLY structured component data. DO NOT generate HTML.
+IMPORTANT: Generate ONLY structured component data with separate content and styles. DO NOT generate HTML.
 
 Available Components:
-- headline: Main titles (properties: text, colorScheme, size)
-- subheadline: Supporting text (properties: text, colorScheme, size)
-- paragraph: Body text (properties: text, colorScheme, size)
-- cta: Call-to-action buttons (properties: button_text, headline, colorScheme, size, variant)
-- feature-list: Feature lists (properties: features array, colorScheme, size)
-- testimonial: Customer testimonials (properties: quote, author, role, company, colorScheme)
-- text-input: Input fields (properties: label, placeholder, required, colorScheme, size)
-- alert: Notifications (properties: variant, title, message, colorScheme)
-- link: Clickable links (properties: text, href, colorScheme, variant, underline)
-- permission-request: Permission prompts (properties: title, description, button_text, colorScheme)
-- spacer: Spacing elements (properties: height, colorScheme)
-- icon: Icons/emojis (properties: icon, size, colorScheme, centered)
-- footer: Page footer (properties: text, colorScheme, size)
+- headline: Main titles (content: text | styles: colorScheme, size, fontWeight, textAlign, marginTop, marginBottom)
+- subheadline: Supporting text (content: text | styles: colorScheme, size, textAlign, marginTop, marginBottom)
+- paragraph: Body text (content: text | styles: colorScheme, size, textAlign, lineHeight)
+- cta: Call-to-action buttons (content: button_text, headline | styles: colorScheme, size, variant, borderRadius, shadow, padding)
+- feature-list: Feature lists (content: features array | styles: colorScheme, size, spacing, alignment, iconColor)
+- testimonial: Customer testimonials (content: quote, author, role, company | styles: colorScheme, size, borderRadius, shadow)
+- text-input: Input fields (content: label, placeholder, required | styles: colorScheme, size, borderRadius, focusColor)
+- alert: Notifications (content: variant, title, message | styles: colorScheme, borderRadius, shadow)
+- link: Clickable links (content: text, href | styles: colorScheme, variant, underline, fontSize, fontWeight)
+- permission-request: Permission prompts (content: title, description, button_text | styles: colorScheme, borderRadius, padding)
+- spacer: Spacing elements (content: {} | styles: height)
+- icon: Icons/emojis (content: icon | styles: size, colorScheme, centered, marginTop, marginBottom)
+- footer: Page footer (content: text | styles: colorScheme, size, textAlign, padding)
 
 IMPORTANT LAYOUT GUIDELINES:
 - Use spacer components between sections for proper spacing
@@ -186,6 +270,12 @@ IMPORTANT LAYOUT GUIDELINES:
 Available colorSchemes: indigo, blue, green, red, yellow, purple, pink, gray, emerald, cyan, orange, slate
 Available sizes: xs, sm, md, lg, xl, 2xl
 Available variants: solid, outline, ghost
+Available spacing: xs, sm, md, lg, xl
+Available alignments: left, center, right
+Available fontWeights: normal, medium, semibold, bold
+Available textAligns: left, center, right, justify
+Available borderRadius: sm, md, lg, xl, 2xl, full
+Available shadows: sm, md, lg, xl, 2xl
 
 Page Details:
 - Page ID: ${page.id}
@@ -204,6 +294,7 @@ REQUIREMENTS:
 3. Make content specific to ${category} apps
 4. Choose appropriate colorSchemes that complement each other
 5. Vary component sizes for visual hierarchy
+6. IMPORTANT: Separate content data from styling data
 
 Return ONLY this JSON structure:
 {
@@ -212,36 +303,50 @@ Return ONLY this JSON structure:
     {
       "type": "headline",
       "content": {
-        "text": "Welcome to ${appName}",
+        "text": "Welcome to ${appName}"
+      },
+      "styles": {
         "colorScheme": "indigo",
-        "size": "xl"
+        "size": "xl",
+        "fontWeight": "bold",
+        "textAlign": "center"
       }
     },
     {
       "type": "subheadline", 
       "content": {
-        "text": "Your journey starts here",
+        "text": "Your journey starts here"
+      },
+      "styles": {
         "colorScheme": "gray",
-        "size": "lg"
+        "size": "lg",
+        "textAlign": "center",
+        "marginTop": "sm"
       }
     },
     {
       "type": "spacer",
-      "content": {
+      "content": {},
+      "styles": {
         "height": "md"
       }
     },
     {
       "type": "feature-list",
       "content": {
-        "features": ["Amazing Feature 1", "Incredible Feature 2", "Fantastic Feature 3"],
+        "features": ["Amazing Feature 1", "Incredible Feature 2", "Fantastic Feature 3"]
+      },
+      "styles": {
         "colorScheme": "blue",
-        "size": "md"
+        "size": "md",
+        "spacing": "comfortable",
+        "alignment": "left"
       }
     },
     {
       "type": "spacer",
-      "content": {
+      "content": {},
+      "styles": {
         "height": "lg"
       }
     },
@@ -249,10 +354,15 @@ Return ONLY this JSON structure:
       "type": "cta",
       "content": {
         "button_text": "Get Started",
-        "headline": "Ready to begin?",
+        "headline": "Ready to begin?"
+      },
+      "styles": {
         "colorScheme": "indigo",
         "size": "lg",
-        "variant": "solid"
+        "variant": "solid",
+        "borderRadius": "lg",
+        "shadow": "md",
+        "padding": "lg"
       }
     }
   ],
@@ -288,7 +398,7 @@ Create compelling, engaging content that fits the page purpose: ${page.purpose}
     if (!content) {
       throw new Error('No content generated')
     }
-    
+
     const parsed = JSON.parse(content)
     
     // Create response in expected format
@@ -339,15 +449,18 @@ Create compelling, engaging content that fits the page purpose: ${page.purpose}
         blocks: fallbackParsed.blocks || [
           {
             type: 'headline',
-            content: { text: `Welcome to ${appName}`, colorScheme: 'indigo', size: 'xl' }
+            content: { text: `Welcome to ${appName}` },
+            styles: { colorScheme: 'indigo', size: 'xl', fontWeight: 'bold', textAlign: 'center' }
           },
           {
             type: 'subheadline', 
-            content: { text: 'Get started with your new experience', colorScheme: 'gray', size: 'lg' }
+            content: { text: 'Get started with your new experience' },
+            styles: { colorScheme: 'gray', size: 'lg', textAlign: 'center', marginTop: 'sm' }
           },
           {
             type: 'cta',
-            content: { button_text: 'Get Started', colorScheme: 'indigo', size: 'lg', variant: 'solid' }
+            content: { button_text: 'Get Started', headline: 'Ready to begin?' },
+            styles: { colorScheme: 'indigo', size: 'lg', variant: 'solid' }
           }
         ],
         theme: {
@@ -360,7 +473,7 @@ Create compelling, engaging content that fits the page purpose: ${page.purpose}
       
       return AIPageContentResponseSchema.parse(fallbackResponse)
     } catch (fallbackError) {
-      throw new Error('Failed to generate page content. Please try again.')
+    throw new Error('Failed to generate page content. Please try again.')
     }
   }
 }
@@ -381,27 +494,6 @@ export async function generateOnboardingContent(
 Generate compelling onboarding page content for a ${category} app called "${appName}" (${appUrl}).
 
 ${notes ? `Additional context: ${notes}` : ''}
-
-Please generate:
-1. A catchy headline (max 60 characters)
-2. A supporting subheadline (max 120 characters)
-3. 3-4 key features (each max 50 characters)
-4. A call-to-action button text (max 25 characters)
-5. A testimonial with author name, role, and company
-
-Make it modern, engaging, and focused on the value proposition. Return the response as valid JSON matching this structure:
-{
-  "headline": "string",
-  "subheadline": "string", 
-  "features": ["string", "string", "string"],
-  "cta": "string",
-  "testimonial": {
-    "text": "string",
-    "author": "string",
-    "role": "string",
-    "company": "string"
-  }
-}
 `
 
   try {
@@ -410,15 +502,16 @@ Make it modern, engaging, and focused on the value proposition. Return the respo
       messages: [
         {
           role: 'system',
-          content: 'You are a expert copywriter specializing in app onboarding pages. Always respond with valid JSON only.'
+          content: 'You are an expert onboarding designer. Generate structured component data ONLY. Return valid JSON without markdown blocks or explanations.'
         },
         {
           role: 'user',
           content: prompt
         }
       ],
-      temperature: 0.8,
-      max_tokens: 1000
+      temperature: 0.7,
+      max_tokens: 1500,
+      response_format: { type: "json_object" }
     })
 
     const content = completion.choices[0]?.message?.content
@@ -426,16 +519,19 @@ Make it modern, engaging, and focused on the value proposition. Return the respo
       throw new Error('No content generated')
     }
 
-    const parsed = JSON.parse(content) as GeneratedContent
+    const parsed = JSON.parse(content)
     
-    // Validate required fields
-    if (!parsed.headline || !parsed.subheadline || !parsed.features || !parsed.cta || !parsed.testimonial) {
-      throw new Error('Invalid response format from OpenAI')
-    }
-
-    return parsed
+    // Create response in expected format
+    const response = {
+      headline: parsed.headline || '',
+      subheadline: parsed.subheadline || '',
+      features: parsed.features || [],
+      cta: parsed.cta || '',
+      testimonial: parsed.testimonial || { text: '', author: '', role: '', company: '' }
+    };
+    
+    return response
   } catch (error) {
-    console.error('OpenAI API Error:', error)
-    throw new Error('Failed to generate content. Please check your API key and try again.')
+    throw new Error('Failed to generate onboarding content. Please try again.')
   }
 } 
