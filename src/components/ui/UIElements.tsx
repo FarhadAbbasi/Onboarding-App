@@ -180,11 +180,19 @@ export const MobileText: React.FC<TextConfig> = ({
   ...props
 }) => {
   const variantClasses = {
-    h1: "text-3xl font-bold leading-tight",
-    h2: "text-2xl font-semibold leading-tight",
-    h3: "text-xl font-medium leading-tight", 
-    body: "text-base leading-relaxed",
-    caption: "text-sm leading-normal"
+    h1: "font-bold leading-tight", 
+    h2: "font-semibold leading-tight", 
+    h3: "font-medium leading-tight", 
+    body: "leading-relaxed", 
+    caption: "leading-normal" 
+  };
+
+  const variantSizes = {
+    h1: '2.5rem', // 40px - Very large and impactful
+    h2: '2rem',   // 32px - Large heading
+    h3: '1.5rem', // 24px - Medium heading
+    body: '1rem', // 16px - Standard body text
+    caption: '0.875rem' // 14px - Small caption
   };
 
   const alignmentClasses = {
@@ -218,7 +226,9 @@ export const MobileText: React.FC<TextConfig> = ({
         // If style includes fontFamily, add proper fallbacks
         ...(style?.fontFamily ? {
           fontFamily: `${style.fontFamily}, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
-        } : {})
+        } : {}),
+        // Ensure variant size always takes precedence
+        fontSize: variantSizes[variant]
       }}
       {...props}
     >
@@ -237,6 +247,9 @@ export interface InputConfig extends BaseMobileProps {
   value?: string;
   onChange?: (value: string) => void;
   color?: string;
+  labelColor?: string;
+  textColor?: string;
+  backgroundColor?: string;
 }
 
 export const MobileInput: React.FC<InputConfig> = ({
@@ -264,15 +277,16 @@ export const MobileInput: React.FC<InputConfig> = ({
       {...props}
     >
       {label && (
-        <motion.label 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className="block text-sm font-semibold text-gray-700 mb-2"
-        >
-          {label}
-          {required && <span className="text-red-500 ml-1">*</span>}
-        </motion.label>
+                  <motion.label 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.2 }}
+            className="block text-sm font-semibold mb-2"
+            style={{ color: (style as any)?.labelColor || color || '#374151' }}
+          >
+            {label}
+            {required && <span className="text-red-500 ml-1">*</span>}
+          </motion.label>
       )}
       <div className="relative">
         {icon && (
@@ -285,25 +299,28 @@ export const MobileInput: React.FC<InputConfig> = ({
             {icon}
           </motion.div>
         )}
-        <motion.input
-          type={type}
-          placeholder={placeholder}
-          value={value}
-          onChange={(e) => onChange?.(e.target.value)}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          whileFocus={{ scale: 1.02 }}
-          transition={{ type: "spring", stiffness: 300, damping: 20 }}
-          className={cn(
-            "w-full px-4 py-4 border-2 rounded-2xl text-base transition-all duration-200",
-            "focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500",
-            "placeholder-gray-400 bg-gray-50 focus:bg-white",
-            "shadow-sm hover:shadow-md focus:shadow-lg",
-            isFocused ? "border-blue-500 bg-white" : "border-gray-200",
-            icon ? "pl-12" : ""
-          )}
-          style={{ color: color || '#111827' }}
-        />
+                  <motion.input
+            type={type}
+            placeholder={placeholder}
+            value={value}
+            onChange={(e) => onChange?.(e.target.value)}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            whileFocus={{ scale: 1.02 }}
+            transition={{ type: "spring", stiffness: 300, damping: 20 }}
+            className={cn(
+              "w-full px-4 py-4 border-2 rounded-2xl text-base transition-all duration-200",
+              "focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500",
+              "placeholder-gray-400 bg-gray-50 focus:bg-white",
+              "shadow-sm hover:shadow-md focus:shadow-lg",
+              isFocused ? "border-blue-500 bg-white" : "border-gray-200",
+              icon ? "pl-12" : ""
+            )}
+            style={{ 
+              color: (style as any)?.textColor || '#111827', // Always dark text for input fields
+              backgroundColor: (style as any)?.backgroundColor || undefined
+            }}
+          />
       </div>
     </motion.div>
   );
@@ -354,28 +371,31 @@ export const MobileButton: React.FC<ButtonConfig> = ({
       ...style
     };
 
-    // Apply variant-specific styles
+    // Apply variant-specific styles, prioritize custom colors
+    const customBgColor = style?.backgroundColor;
+    const customTextColor = style?.color;
+    
     switch (variant) {
       case 'primary':
         return {
           ...baseStyle,
-          backgroundColor: style?.backgroundColor || '#3B82F6',
-          color: style?.color || '#FFFFFF',
-          boxShadow: `0 4px 14px 0 ${style?.backgroundColor || '#3B82F6'}40`,
+          backgroundColor: customBgColor || '#3B82F6',
+          color: customTextColor || '#FFFFFF',
+          boxShadow: `0 4px 14px 0 ${customBgColor || '#3B82F6'}40`,
         };
       case 'secondary':
         return {
           ...baseStyle,
-          backgroundColor: style?.backgroundColor || '#F3F4F6',
-          color: style?.color || '#374151',
+          backgroundColor: customBgColor || '#F3F4F6',
+          color: customTextColor || '#374151',
           boxShadow: '0 2px 8px 0 rgba(0, 0, 0, 0.1)',
         };
       case 'ghost':
         return {
           ...baseStyle,
           backgroundColor: 'transparent',
-          color: style?.color || '#374151',
-          border: '2px solid #D1D5DB',
+          color: customTextColor || '#374151',
+          border: `2px solid ${customBgColor || '#D1D5DB'}`,
           boxShadow: 'none',
         };
       default:
@@ -454,11 +474,7 @@ export const MobileImage: React.FC<ImageConfig> = ({
     xl: "w-48 h-48"
   };
 
-  const alignmentClasses = {
-    left: "self-start",
-    center: "self-center",
-    right: "self-end"
-  };
+
 
   const borderRadiusClasses = {
     none: "rounded-none",
@@ -823,13 +839,19 @@ export const MobileProgressBar: React.FC<ProgressBarConfig> = ({
     >
       {label && (
         <div className="flex justify-between items-center mb-3">
-          <span className="text-sm font-semibold text-gray-700">{label}</span>
+          <span 
+            className="text-sm font-semibold"
+            style={{ color: (style as any)?.labelColor || '#374151' }}
+          >
+            {label}
+          </span>
           {showPercentage && (
             <motion.span 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.5 }}
-              className="text-sm font-bold text-gray-900"
+              className="text-sm font-bold"
+              style={{ color: (style as any)?.textColor || '#111827' }}
             >
               {percentage}%
             </motion.span>
@@ -894,13 +916,19 @@ export const MobileSlider: React.FC<SliderConfig> = ({
       {...props}
     >
       <div className="flex justify-between items-center mb-4">
-        <label className="text-sm font-semibold text-gray-700">{label}</label>
+        <label 
+          className="text-sm font-semibold"
+          style={{ color: (style as any)?.labelColor || '#374151' }}
+        >
+          {label}
+        </label>
         <motion.span 
           key={currentValue}
           initial={{ scale: 1.2, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ duration: 0.2 }}
-          className="text-sm font-bold text-gray-900 bg-gray-100 px-3 py-1 rounded-full"
+          className="text-sm font-bold bg-gray-100 px-3 py-1 rounded-full"
+          style={{ color: (style as any)?.textColor || '#111827' }}
         >
           {currentValue}{unit}
         </motion.span>
@@ -919,7 +947,10 @@ export const MobileSlider: React.FC<SliderConfig> = ({
           }}
         />
       </div>
-      <div className="flex justify-between text-xs text-gray-500 mt-2">
+      <div 
+        className="flex justify-between text-xs mt-2"
+        style={{ color: (style as any)?.labelColor || '#6B7280' }}
+      >
         <span className="font-medium">{min}{unit}</span>
         <span className="font-medium">{max}{unit}</span>
       </div>
@@ -999,7 +1030,8 @@ export const MobileCard: React.FC<CardConfig> = ({
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.3 }}
-            className="font-bold text-gray-900 mb-2 text-lg"
+            className="font-bold mb-2 text-lg"
+            style={{ color: (style as any)?.titleColor || '#111827' }}
           >
             {title}
           </motion.h3>
@@ -1008,7 +1040,8 @@ export const MobileCard: React.FC<CardConfig> = ({
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.4 }}
-              className="text-sm text-gray-600 leading-relaxed"
+              className="text-sm leading-relaxed"
+              style={{ color: (style as any)?.contentColor || '#6B7280' }}
             >
               {content}
             </motion.p>
@@ -1026,6 +1059,8 @@ export interface ToggleConfig extends BaseMobileProps {
   onChange?: (value: boolean) => void;
   color?: string;
   description?: string;
+  textColor?: string;
+  descriptionColor?: string;
 }
 
 export const MobileToggle: React.FC<ToggleConfig> = ({
@@ -1050,9 +1085,19 @@ export const MobileToggle: React.FC<ToggleConfig> = ({
     <div className={cn("px-6 py-4", className)} style={style} {...props}>
       <div className="flex items-center justify-between">
         <div className="flex-1">
-          <div className="font-medium text-gray-900">{label}</div>
+          <div 
+            className="font-medium"
+            style={{ color: (style as any)?.textColor || '#FFFFFF' }}
+          >
+            {label}
+          </div>
           {description && (
-            <div className="text-sm text-gray-500 mt-1">{description}</div>
+            <div 
+              className="text-sm mt-1"
+              style={{ color: (style as any)?.descriptionColor || '#E5E7EB' }}
+            >
+              {description}
+            </div>
           )}
         </div>
         <button

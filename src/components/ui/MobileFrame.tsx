@@ -127,7 +127,7 @@ export const renderUIComponent = (
             alignment={titleComp.props.alignment || 'left'}
             color={titleComp.props.color || theme?.textColor || '#1F2937'}
             fontWeight={titleComp.props.fontWeight || 'normal'}
-            className={titleComp.props.className}
+
             style={mergedStyles}
           />
         </ComponentWrapper>
@@ -150,6 +150,50 @@ export const renderUIComponent = (
 
     case 'Button':
       const buttonComp = component as ButtonComponent;
+      
+      // Merge all styling sources with proper precedence
+      const buttonVariant = buttonComp.props.variant || 'primary';
+      const hasCustomBackground = !!buttonComp.props.style?.backgroundColor;
+      
+      const buttonMergedStyles: React.CSSProperties = {
+        // Start with theme defaults based on variant (only if no custom backgroundColor)
+        ...(!hasCustomBackground && theme ? (() => {
+          switch (buttonVariant) {
+            case 'primary':
+              return {
+                backgroundColor: theme.primaryColor,
+                color: '#FFFFFF'
+              };
+            case 'secondary':
+              return {
+                backgroundColor: '#F3F4F6', // Light gray background
+                color: theme.primaryColor || '#374151' // Theme color text or dark fallback
+              };
+            case 'ghost':
+              return {
+                backgroundColor: 'transparent',
+                color: theme.primaryColor || '#374151',
+                border: `2px solid ${theme.primaryColor || '#D1D5DB'}`
+              };
+            default:
+              return {};
+          }
+        })() : {}),
+        // Apply component base styles
+        ...(component.styles || {}),
+        // Apply component custom styles (higher precedence)
+        ...(component.customStyles || {}),
+        // Apply props style (highest precedence)
+        ...(buttonComp.props.style || {}),
+        // Ensure proper text color contrast for custom background colors
+        ...(hasCustomBackground ? {
+          color: buttonComp.props.style?.color || (
+            // Smart contrast: white text for dark backgrounds, dark text for light backgrounds
+            buttonVariant === 'secondary' ? (theme?.primaryColor || '#374151') : '#FFFFFF'
+          )
+        } : {})
+      };
+      
       return (
         <ComponentWrapper key={key}>
           <MobileButton
@@ -158,10 +202,7 @@ export const renderUIComponent = (
             fullWidth={buttonComp.props.fullWidth !== false}
             disabled={buttonComp.props.disabled}
             rounded={buttonComp.props.rounded}
-            style={buttonComp.props.variant === 'primary' && theme ? {
-              backgroundColor: theme.primaryColor,
-              color: '#FFFFFF'
-            } : undefined}
+            style={buttonMergedStyles}
           />
         </ComponentWrapper>
       );

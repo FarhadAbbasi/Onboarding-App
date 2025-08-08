@@ -42,7 +42,7 @@ async function generateMobileOnboardingContent(
     return { success: false, error: 'API key not configured' };
   }
 
-  
+
   const openai = new OpenAI({
     apiKey,
     dangerouslyAllowBrowser: true
@@ -590,7 +590,7 @@ export const generateSplashScreen = async (
     return result;
   } catch (error) {
     console.warn('❌ Failed to get enhanced splash background, using default:', error);
-    return createMobileSplashScreen(appName, logoUrl, primaryColor);
+  return createMobileSplashScreen(appName, logoUrl, primaryColor);
   }
 };
 
@@ -663,20 +663,20 @@ export const generateOnboardingScreens = async (
         const fallbackGradient = `linear-gradient(135deg, ${adjustColorBrightness(primaryColor, 40)} 0%, ${primaryColor} 30%, ${adjustColorBrightness(primaryColor, -40)} 70%, ${adjustColorBrightness(primaryColor, -60)} 100%)`;
         console.log(`🎨 Using gradient fallback for screen ${index + 1}:`, fallbackGradient);
         
-        screens.push({
-          ...createMobileOnboardingScreen(
-            content.title,
-            content.subtitle,
+      screens.push({
+        ...createMobileOnboardingScreen(
+          content.title,
+          content.subtitle,
             fallbackGradient,
-            index + 1,
-            3,
-            primaryColor,
-            index === 2 ? 'Get Started' : 'Continue'
-          ),
+          index + 1,
+          3,
+          primaryColor,
+          index === 2 ? 'Get Started' : 'Continue'
+        ),
           bgType: 'gradient',
           bgValue: fallbackGradient,
           overlayColor: undefined
-        });
+      });
       }
     }
 
@@ -701,16 +701,16 @@ export const generateOnboardingScreens = async (
         
         console.log(`✅ Enhanced fallback background config:`, backgroundConfig);
         
-        screens.push({
-          ...createMobileOnboardingScreen(
-            content.title,
-            content.subtitle,
+      screens.push({
+        ...createMobileOnboardingScreen(
+          content.title,
+          content.subtitle,
             backgroundConfig.value,
-            index + 1,
-            3,
-            primaryColor,
-            index === 2 ? 'Get Started' : 'Continue'
-          ),
+          index + 1,
+          3,
+          primaryColor,
+          index === 2 ? 'Get Started' : 'Continue'
+        ),
           bgType: backgroundConfig.type,
           bgValue: backgroundConfig.value,
           overlayColor: backgroundConfig.overlayColor || (backgroundConfig.type === 'image' ? 'rgba(0, 0, 0, 0.4)' : undefined)
@@ -776,9 +776,9 @@ export const generateAuthScreens = async (
             primaryColor
           );
           
-          screens.push({
-            id: `mobile-${authScreen.id}`,
-            name: authScreen.id === 'sign-up' ? 'Sign Up' : 'Sign In',
+        screens.push({
+          id: `mobile-${authScreen.id}`,
+          name: authScreen.id === 'sign-up' ? 'Sign Up' : 'Sign In',
             type: 'auth',
             bgType: backgroundConfig.type,
             bgValue: backgroundConfig.value,
@@ -793,10 +793,10 @@ export const generateAuthScreens = async (
             id: `mobile-${authScreen.id}`,
             name: authScreen.id === 'sign-up' ? 'Sign Up' : 'Sign In',
             type: 'auth',
-            bgType: 'gradient',
+          bgType: 'gradient',
             bgValue: `linear-gradient(135deg, ${adjustColorBrightness(primaryColor, 40)} 0%, ${primaryColor} 30%, ${adjustColorBrightness(primaryColor, -40)} 70%, ${adjustColorBrightness(primaryColor, -60)} 100%)`,
-            components: authScreen.components
-          });
+          components: authScreen.components
+        });
         }
       }
     } else {

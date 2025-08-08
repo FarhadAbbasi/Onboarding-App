@@ -278,6 +278,23 @@ export function MobileScreenEditor({ project, onBack }: MobileScreenEditorProps)
       component.props.placeholder = newText;
     } else if (component.type === 'Card') {
       component.props.title = newText;
+    } else if (component.type === 'CardGrid') {
+      component.props.title = newText;
+    }
+
+    setScreens(updatedScreens);
+    setFlow(prev => prev ? { ...prev, screens: updatedScreens } : null);
+    setEditingComponent({ ...editingComponent, component });
+  };
+
+  const handleInputLabelChange = (newLabel: string) => {
+    if (!editingComponent) return;
+
+    const updatedScreens = [...screens];
+    const component = updatedScreens[editingComponent.screenIndex].components[editingComponent.componentIndex];
+    
+    if (component.type === 'Input') {
+      component.props.label = newLabel;
     }
 
     setScreens(updatedScreens);
@@ -295,7 +312,26 @@ export function MobileScreenEditor({ project, onBack }: MobileScreenEditorProps)
     if (component.type === 'Title') {
       component.props.color = newColor;
     } else if (component.type === 'Button') {
-      component.props.variant = 'primary'; // Reset variant to ensure color shows
+      if (!component.props.style) component.props.style = {};
+      const buttonVariant = component.props.variant || 'primary';
+      
+      // Apply color based on button variant
+      if (buttonVariant === 'secondary') {
+        // For secondary: light background, colored text
+        component.props.style.backgroundColor = `${newColor}20`; // 20% opacity of color
+        component.props.style.color = newColor;
+        component.props.style.border = `2px solid ${newColor}40`; // 40% opacity border
+      } else if (buttonVariant === 'ghost') {
+        // For ghost: transparent background, colored text and border
+        component.props.style.backgroundColor = 'transparent';
+        component.props.style.color = newColor;
+        component.props.style.border = `2px solid ${newColor}`;
+      } else {
+        // For primary: colored background, white text
+        component.props.style.backgroundColor = newColor;
+        component.props.style.color = '#FFFFFF';
+      }
+      // Keep current variant - don't force primary
     } else if (component.type === 'Input') {
       component.props.color = newColor;
     } else if (component.type === 'Card') {
@@ -637,22 +673,42 @@ export function MobileScreenEditor({ project, onBack }: MobileScreenEditorProps)
 
         <div className="space-y-4">
           {/* Text Editing */}
-          {(component.type === 'Title' || component.type === 'Button' || component.type === 'Input' || component.type === 'Card') && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                {component.type === 'Input' ? 'Placeholder' : 'Text'}
-              </label>
-              <input
-                type="text"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={
-                  component.type === 'Title' ? component.props.text :
-                  component.type === 'Button' ? component.props.text :
-                  component.type === 'Input' ? component.props.placeholder :
-                  component.type === 'Card' ? component.props.title : ''
-                }
-                onChange={(e) => handleTextChange(e.target.value)}
-              />
+          {(component.type === 'Title' || component.type === 'Button' || component.type === 'Input' || component.type === 'Card' || component.type === 'CardGrid') && (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {component.type === 'Input' ? 'Placeholder' : 
+                   component.type === 'CardGrid' ? 'Title' : 'Text'}
+                </label>
+                <input
+                  type="text"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={
+                    component.type === 'Title' ? component.props.text :
+                    component.type === 'Button' ? component.props.text :
+                    component.type === 'Input' ? component.props.placeholder :
+                    component.type === 'Card' ? component.props.title :
+                    component.type === 'CardGrid' ? component.props.title : ''
+                  }
+                  onChange={(e) => handleTextChange(e.target.value)}
+                />
+              </div>
+              
+              {/* Input Label Editing */}
+              {component.type === 'Input' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Label
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={component.props.label || ''}
+                    onChange={(e) => handleInputLabelChange(e.target.value)}
+                    placeholder="Enter label text"
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -667,7 +723,7 @@ export function MobileScreenEditor({ project, onBack }: MobileScreenEditorProps)
                   className="w-4 h-4 rounded border border-gray-300"
                                       style={{ backgroundColor: (
                       component.type === 'Title' ? component.props.color : 
-                      component.type === 'Button' ? (component.props as any).color :
+                      component.type === 'Button' ? component.props.style?.backgroundColor :
                       component.type === 'OptionGroup' ? (component.props as any).color :
                       component.type === 'ProgressBar' ? component.props.color :
                       component.type === 'Slider' ? component.props.color :
@@ -698,7 +754,7 @@ export function MobileScreenEditor({ project, onBack }: MobileScreenEditorProps)
                       className={`w-8 h-8 rounded-full border-2 transition-colors ${
                                                   (
                             component.type === 'Title' ? component.props.color : 
-                            component.type === 'Button' ? (component.props as any).color :
+                            component.type === 'Button' ? component.props.style?.backgroundColor :
                             component.type === 'OptionGroup' ? (component.props as any).color :
                             component.type === 'ProgressBar' ? component.props.color :
                             component.type === 'Slider' ? component.props.color :
@@ -730,7 +786,7 @@ export function MobileScreenEditor({ project, onBack }: MobileScreenEditorProps)
                     type="color"
                                           value={(
                         component.type === 'Title' ? component.props.color : 
-                        component.type === 'Button' ? (component.props as any).color :
+                        component.type === 'Button' ? component.props.style?.backgroundColor :
                         component.type === 'OptionGroup' ? (component.props as any).color :
                         component.type === 'ProgressBar' ? component.props.color :
                         component.type === 'Slider' ? component.props.color :
@@ -773,7 +829,7 @@ export function MobileScreenEditor({ project, onBack }: MobileScreenEditorProps)
                         // Reset to current component color if invalid
                         const currentColor = (
                           component.type === 'Title' ? component.props.color : 
-                          component.type === 'Button' ? (component.props as any).color :
+                          component.type === 'Button' ? component.props.style?.backgroundColor :
                           component.type === 'OptionGroup' ? (component.props as any).color :
                           component.type === 'ProgressBar' ? component.props.color :
                           component.type === 'Slider' ? component.props.color :
